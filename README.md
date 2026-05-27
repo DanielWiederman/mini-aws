@@ -26,12 +26,12 @@ It mimics the following AWS primitives locally:
 The system is built around the **CQRS (Command Query Responsibility Segregation)** and **Event Sourcing** patterns. Three independent producer services stream domain events onto dedicated Kafka topics. A single consumer engine joins and materializes those streams into a queryable read model — with no REST calls between services.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          mini-aws  —  Current Flow                          │
-│                                                                             │
+┌────────────────────────────────────────────────────────────────────────────┐
+│                          mini-aws  —  Current Flow                         │
+│                                                                            │
 │   PRODUCERS (Write / Command Side)          KAFKA BROKER (Docker)          │
-│   ─────────────────────────────             ──────────────────────          │
-│                                                                             │
+│   ─────────────────────────────             ──────────────────────         │
+│                                                                            │
 │  ┌─────────────────────┐                  ┌──────────────────────┐         │
 │  │  customers-service  │ ─── publish ───► │   customer-topic     │         │
 │  │  (Node.js / TS)     │                  └──────────┬───────────┘         │
@@ -61,14 +61,14 @@ The system is built around the **CQRS (Command Query Responsibility Segregation)
 │                                        │   • customerTable  ◄────┤ sub     │
 │                                        │   • catalogTable   ◄────┤ sub     │
 │                                        │   • join + enrich  ◄────┘ sub     │
-│                                        │   • apply tier rules               │
+│                                        │   • apply tier rules    |         │
 │                                        │   ─────────────────     │         │
 │                                        │   ► Materialized View   │         │
 │                                        │     (in-memory store)   │         │
 │                                        └─────────────────────────┘         │
-│                                                                             │
+│                                                                            │
 │   shared-contracts  ─── TypeScript interfaces shared across all services   │
-└─────────────────────────────────────────────────────────────────────────────┘
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Data Flow Diagram (Mermaid)
