@@ -119,24 +119,70 @@ flowchart LR
 ## Project Structure
 
 ```
-mini-aws/
+mini-aws/                        ← monorepo root
+├── package.json                 # root scripts (dev, build, typecheck)
+├── pnpm-workspace.yaml          # declares all workspace packages
+├── tsconfig.base.json           # shared TS compiler settings (extended by each service)
 ├── docker-compose.yaml          # Kafka broker + topic init (mocks AWS MSK)
 │
-├── shared-contracts/            # Shared TypeScript event interfaces
-│   └── src/interfaces.ts        # CustomerEvent, CatalogEvent, OrderEvent
+├── shared-contracts/            # workspace package — single source of truth for event types
+│   └── src/
+│       ├── interfaces.ts        # CustomerEvent, CatalogEvent, OrderEvent
+│       └── index.ts             # re-export entry point
 │
-├── customers-service/           # Streams user profile & tier events
+├── customers-service/           # workspace package — streams user profile & tier events
 │   └── src/customers-producer.ts
 │
-├── catalog-service/             # Streams product & price change events
+├── catalog-service/             # workspace package — streams product & price change events
 │   └── src/catalog-producer.ts
 │
-├── orders-service/              # Streams checkout / order command events
+├── orders-service/              # workspace package — streams checkout / order command events
 │   └── src/orders-producer.ts
 │
-└── derived-view-service/        # CQRS consumer: joins streams → read model
+└── derived-view-service/        # workspace package — CQRS consumer: joins streams → read model
     └── src/cqrs-engine.ts
 ```
+
+---
+
+## Monorepo
+
+This repo is a **pnpm workspace** monorepo. All packages are managed from the root — there is no need to `cd` into individual service folders.
+
+### Workspace structure
+
+| File | Purpose |
+|---|---|
+| `pnpm-workspace.yaml` | Tells pnpm which folders are packages and links them together |
+| `tsconfig.base.json` | Shared TypeScript settings; each service extends this with `"extends": "../tsconfig.base.json"` |
+| `package.json` | Root-level scripts that orchestrate the whole repo |
+
+### Root scripts
+
+| Command | What it does |
+|---|---|
+| `pnpm dev` | Runs **all 4 services in parallel**, color-coded in one terminal (`concurrently`) |
+| `pnpm dev:customers` | Runs only `customers-service` |
+| `pnpm dev:catalog` | Runs only `catalog-service` |
+| `pnpm dev:orders` | Runs only `orders-service` |
+| `pnpm dev:view` | Runs only `derived-view-service` (the live CQRS dashboard) |
+| `pnpm build` | Builds all packages with `tsup` (ESM output to each `dist/`) |
+| `pnpm typecheck` | Runs `tsc --noEmit` across every package |
+
+### How `shared-contracts` is linked
+
+Each service declares `"shared-contracts": "workspace:*"` in its `dependencies`. pnpm symlinks the local package into each service's `node_modules` — no publishing to npm, no build step required in development. Imports resolve directly to the TypeScript source:
+
+```ts
+import { CustomerEvent } from 'shared-contracts';
+```
+
+### Adding a new package
+
+1. Create the folder at the repo root
+2. Add a `package.json` with a unique `name`
+3. Add it to `pnpm-workspace.yaml`
+4. Run `pnpm install` from the root — pnpm links everything automatically
 
 ---
 
@@ -148,48 +194,52 @@ mini-aws/
 - [Node.js](https://nodejs.org/) 18+
 - [pnpm](https://pnpm.io/)
 
-### 1. Start Kafka
+### 1. Install all dependencies
+
+Run once from the **repo root** — installs and links all workspace packages in one shot:
+
+```bash
+pnpm install
+```
+
+> First install will prompt: `pnpm approve-builds` — select `esbuild` and confirm. This downloads esbuild's native binary needed by `tsup`.
+
+### 2. Start Kafka
 
 ```bash
 docker-compose up -d
 ```
 
-This starts a single-node Kafka broker (KRaft mode, no Zookeeper) and auto-creates the three topics.
+Starts a single-node Kafka broker (KRaft mode, no Zookeeper) and auto-creates the three topics.
 
-### 2. Install Dependencies
-
-Run in each service directory:
+### 3. Run all services
 
 ```bash
-cd customers-service && pnpm install
-cd ../catalog-service && pnpm install
-cd ../orders-service && pnpm install
-cd ../derived-view-service && pnpm install
+pnpm dev
 ```
 
-### 3. Run Services
+This starts all four services in parallel in one terminal, each with a colored label:
 
-Open four terminals and run each service:
+```
+[customers] 👥 Customers Service Online...
+[catalog]   📦 Catalog Service Online...
+[orders]    🛒 Orders Write/Command Service Online...
+[view]      📊 CQRS Derived View Engine Online...
+```
+
+Or run a single service in isolation:
 
 ```bash
-# Terminal 1
-cd customers-service && pnpm dev
-
-# Terminal 2
-cd catalog-service && pnpm dev
-
-# Terminal 3
-cd orders-service && pnpm dev
-
-# Terminal 4 — the live CQRS dashboard
-cd derived-view-service && pnpm dev
+pnpm dev:view
 ```
-
-The `derived-view-service` terminal will render a live dashboard showing enriched, joined order records as they stream in.
 
 ### 4. Stop
 
 ```bash
+# Stop all services
+Ctrl+C
+
+# Stop Kafka
 docker-compose down
 ```
 
@@ -291,7 +341,10 @@ flowchart TD
 | Language | TypeScript (Node.js) |
 | Messaging | Apache Kafka (KafkaJS client) |
 | Infrastructure | Docker Compose (Confluent Kafka image) |
-| Package Manager | pnpm |
+| Monorepo | pnpm workspaces |
+| Dev runner | tsx (esbuild-based, no compile step) |
+| Production build | tsup (esbuild bundler) |
+| Multi-service dev | concurrently |
 | Future API | Express / Fastify / NestJS |
 | Future Frontend | React / Next.js |
 | Future Cloud | AWS MSK, ECS, API Gateway |
