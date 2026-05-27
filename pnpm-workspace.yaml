@@ -1,0 +1,8 @@
+packages:
+  - "shared-contracts"
+  - "catalog-service"
+  - "customers-service"
+  - "orders-service"
+  - "derived-view-service"
+allowBuilds:
+  esbuild: true

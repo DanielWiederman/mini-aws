@@ -1,6 +1,6 @@
 // orders-service/src/orders-producer.ts
 import { Kafka, Producer } from 'kafkajs';
-import { OrderEvent } from './interfaces';
+import { OrderEvent } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'orders-service',

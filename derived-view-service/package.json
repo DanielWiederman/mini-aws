@@ -1,15 +1,13 @@
 {
-  "name": "derived-vew-service",
+  "name": "derived-view-service",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "tsx src/cqrs-engine.ts"
+    "dev": "tsx src/cqrs-engine.ts",
+    "build": "tsup src/cqrs-engine.ts --format esm",
+    "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
@@ -17,12 +15,13 @@
       "onFail": "download"
     }
   },
-  "type": "module",
   "dependencies": {
-    "kafkajs": "^2.2.4"
+    "kafkajs": "^2.2.4",
+    "shared-contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "tsup": "^8.5.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"
   }

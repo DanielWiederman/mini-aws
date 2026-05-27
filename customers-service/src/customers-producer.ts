@@ -1,6 +1,6 @@
 // customers-service/src/customers-producer.ts
 import { Kafka, Producer } from 'kafkajs';
-import { CustomerEvent } from './interfaces';
+import { CustomerEvent } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'customers-service',

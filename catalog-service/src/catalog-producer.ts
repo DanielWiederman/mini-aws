@@ -1,6 +1,6 @@
 // catalog-service/src/catalog-producer.ts
 import { Kafka, Producer } from 'kafkajs';
-import { CatalogEvent } from './interfaces';
+import { CatalogEvent } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'catalog-service',

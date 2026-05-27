@@ -1,6 +1,6 @@
 // derived-view-service/src/cqrs-engine.ts
 import { Kafka, Consumer } from 'kafkajs';
-import { CustomerEvent, CatalogEvent, OrderEvent } from './interfaces';
+import { CustomerEvent, CatalogEvent, OrderEvent } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'derived-view-service',

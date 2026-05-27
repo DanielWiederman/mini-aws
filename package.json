@@ -1,0 +1,24 @@
+{
+  "name": "mini-aws",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n 'customers,catalog,orders,view' -c 'green,cyan,yellow,magenta' 'pnpm dev:customers' 'pnpm dev:catalog' 'pnpm dev:orders' 'pnpm dev:view'",
+    "dev:customers": "pnpm --filter customers-service dev",
+    "dev:catalog": "pnpm --filter catalog-service dev",
+    "dev:orders": "pnpm --filter orders-service dev",
+    "dev:view": "pnpm --filter derived-view-service dev",
+    "typecheck": "pnpm -r typecheck",
+    "build": "pnpm -r --filter !mini-aws build"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.3.0",
+      "onFail": "download"
+    }
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
