@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/customers-producer.ts",
-    "build": "tsup src/customers-producer.ts --format esm",
+    "dev": "tsx src/customers-worker.ts",
+    "build": "tsup src/customers-worker.ts --format esm",
     "typecheck": "tsc --noEmit"
   },
   "devEngines": {
@@ -17,10 +17,13 @@
   },
   "dependencies": {
     "kafkajs": "^2.2.4",
+    "kysely": "^0.29.2",
+    "pg": "^8.21.0",
     "shared-contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@types/pg": "^8.20.0",
     "tsup": "^8.5.0",
     "tsx": "^4.22.3",
     "typescript": "^6.0.3"

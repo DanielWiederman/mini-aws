@@ -1,6 +1,6 @@
-// derived-view-service/src/cqrs-engine.ts
 import { Kafka, Consumer } from 'kafkajs';
 import { CustomerEvent, CatalogEvent, OrderEvent } from 'shared-contracts';
+import { open } from 'lmdb';
 
 const kafka = new Kafka({
   clientId: 'derived-view-service',
@@ -10,9 +10,12 @@ const kafka = new Kafka({
 // A single consumer group that subscribes to multiple topics
 const consumer: Consumer = kafka.consumer({ groupId: 'cqrs-view-group' });
 
-// --- LOCAL STATE STORES (Simulating local KTables) ---
-const customerTable: { [id: string]: CustomerEvent } = {};
-const catalogTable: { [id: string]: CatalogEvent } = {};
+// --- LOCAL STATE STORES (Backed by LMDB for persistence and high performance) ---
+const customerTable = open({ path: './db/customers', compression: true });
+const catalogTable = open({ path: './db/catalog', compression: true });
+
+let customersCount = [...customerTable.getKeys()].length;
+let catalogCount = [...catalogTable.getKeys()].length;
 
 // --- THE DERIVED READ MODEL (CQRS Materialized View) ---
 interface ReadModelOrderSummary {
@@ -40,14 +43,18 @@ async function startCqrsEngine() {
       // ROUTE 1: Maintain the Customer local state table
       if (topic === 'customer-topic') {
         const customer = rawData as CustomerEvent;
-        customerTable[customer.customerId] = customer;
-        updateDashboard(`Customer updated: ${customer.fullName} (${customer.tier})`);
+        const isNew = customerTable.get(customer.customerId) === undefined;
+        await customerTable.put(customer.customerId, customer);
+        if (isNew) customersCount++;
+        updateDashboard(`Customer updated: ${customer.firstName} ${customer.lastName} (${customer.tier})`);
       }
 
       // ROUTE 2: Maintain the Catalog local state table (Live price tracking)
       else if (topic === 'catalog-topic') {
         const product = rawData as CatalogEvent;
-        catalogTable[product.productId] = product;
+        const isNew = catalogTable.get(product.productId) === undefined;
+        await catalogTable.put(product.productId, product);
+        if (isNew) catalogCount++;
         updateDashboard(`Catalog updated: ${product.title} price is now $${product.price}`);
       }
 
@@ -55,14 +62,14 @@ async function startCqrsEngine() {
       else if (topic === 'orders-topic') {
         const rawOrder = rawData as OrderEvent;
         
-        // 1. Fetch details from local tables (No HTTP API requests needed!)
-        const customerProfile = customerTable[rawOrder.customerId];
-        const customerName = customerProfile ? customerProfile.fullName : 'Unknown Customer';
+        // 1. Fetch details from LMDB synchronously (Blazing fast reads)
+        const customerProfile = customerTable.get(rawOrder.customerId) as CustomerEvent | undefined;
+        const customerName = customerProfile ? `${customerProfile.firstName} ${customerProfile.lastName}` : 'Unknown Customer';
         const customerTier = customerProfile ? customerProfile.tier : 'STANDARD';
 
         let invoiceTotal = 0;
         const purchasedItems = rawOrder.items.map(item => {
-          const productDetail = catalogTable[item.productId];
+          const productDetail = catalogTable.get(item.productId) as CatalogEvent | undefined;
           const productTitle = productDetail ? productDetail.title : 'Missing Product Name';
           const currentPrice = productDetail ? productDetail.price : 0;
           const itemCost = currentPrice * item.quantity;
@@ -104,8 +111,8 @@ function updateDashboard(latestEventLog: string) {
   console.log("⚡ AWS-STYLE ARCHITECTURE MOCKUP: CQRS MATERIALIZED VIEW STREAM ⚡");
   console.log("==========================================================================");
   console.log(`📡 Latest Cluster Activity: ${latestEventLog}`);
-  console.log(`👥 Known Customers Stored Locally: ${Object.keys(customerTable).length}`);
-  console.log(`📦 Tracked Catalog Items In-Memory: ${Object.keys(catalogTable).length}`);
+  console.log(`👥 Known Customers Stored in LMDB: ${customersCount}`);
+  console.log(`📦 Tracked Catalog Items in LMDB: ${catalogCount}`);
   console.log("==========================================================================");
   console.log("📖 JOINED VIEW RESULTS (The Queryable Read Database Model):");
   

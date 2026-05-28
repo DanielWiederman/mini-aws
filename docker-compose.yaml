@@ -27,6 +27,16 @@ services:
     depends_on:
       - kafka
     entrypoint: [ "sh", "-c", "
+      kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic customer-commands-topic --partitions 1 --replication-factor 1 &&
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic customer-topic --partitions 1 --replication-factor 1 &&
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic catalog-topic --partitions 1 --replication-factor 1 &&
       kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic orders-topic --partitions 1 --replication-factor 1" ]
+
+  customers-db:
+    image: postgres:15-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: customers_db

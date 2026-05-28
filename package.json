@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n 'customers,catalog,orders,view' -c 'green,cyan,yellow,magenta' 'pnpm dev:customers' 'pnpm dev:catalog' 'pnpm dev:orders' 'pnpm dev:view'",
+    "dev": "concurrently -n 'api,customers,catalog,orders,view' -c 'blue,green,cyan,yellow,magenta' 'pnpm dev:api' 'pnpm dev:customers' 'pnpm dev:catalog' 'pnpm dev:orders' 'pnpm dev:view'",
+    "dev:api": "pnpm --filter api-gateway dev",
     "dev:customers": "pnpm --filter customers-service dev",
     "dev:catalog": "pnpm --filter catalog-service dev",
     "dev:orders": "pnpm --filter orders-service dev",
@@ -20,5 +21,12 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lmdb",
+      "msgpackr-extract"
+    ]
   }
 }

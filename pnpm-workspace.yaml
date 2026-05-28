@@ -4,5 +4,8 @@ packages:
   - "customers-service"
   - "orders-service"
   - "derived-view-service"
+  - "api-gateway"
 allowBuilds:
   esbuild: true
+  lmdb: set this to true or false
+  msgpackr-extract: set this to true or false
