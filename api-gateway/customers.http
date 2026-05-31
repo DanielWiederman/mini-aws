@@ -32,3 +32,16 @@ Idempotency-Key: req-upgrade-tier-101
 {
   "tier": "PREMIUM"
 }
+
+### =========================================
+### CQRS READ SIDE (Queries)
+### =========================================
+
+### Get a customer by ID
+GET {{baseUrl}}/api/customers/cust_101
+
+### Get all customers
+GET {{baseUrl}}/api/customers
+
+### Get customers by filter (e.g., PREMIUM tier)
+GET {{baseUrl}}/api/customers?tier=PREMIUM

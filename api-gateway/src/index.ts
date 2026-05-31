@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import { Kafka } from 'kafkajs';
 import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload } from 'shared-contracts';
 import { open } from 'lmdb';
@@ -7,6 +8,13 @@ const app = express();
 app.use(express.json());
 
 const idempotencyDb = open({ path: './db/idempotency', compression: true });
+
+// CQRS Query Side: Connect directly to the derived-view-service's materialized state!
+const customerReadDb = open({ 
+  path: path.resolve(process.cwd(), '../derived-view-service/db/customers'), 
+  readOnly: true, 
+  compression: true 
+});
 
 const kafka = new Kafka({
   clientId: 'api-gateway',
@@ -102,6 +110,38 @@ app.post('/api/customers/:id/tier', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- CQRS READ SIDE (QUERIES) ---
+
+app.get('/api/customers', (req, res) => {
+  try {
+    const tierFilter = req.query.tier as string;
+    const results = [];
+    
+    for (const { key, value } of customerReadDb.getRange()) {
+      if (tierFilter && value.tier !== tierFilter) continue;
+      results.push(value);
+    }
+    
+    res.json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to read from materialized view' });
+  }
+});
+
+app.get('/api/customers/:id', (req, res) => {
+  try {
+    const customer = customerReadDb.get(req.params.id);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    res.json(customer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to read from materialized view' });
   }
 });
 
