@@ -31,11 +31,22 @@ async function start() {
   await consumer.connect();
   
   await consumer.subscribe({ topic: 'catalog-commands-topic', fromBeginning: true });
-  console.log('📦 [Catalog Worker] Listening for commands on catalog-commands-topic');
+  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: true });
+  console.log('📦 [Catalog Worker] Listening for commands and saga orders');
 
   await consumer.run({
-    eachMessage: async ({ message }) => {
+    eachMessage: async ({ topic, message }) => {
       if (!message.value) return;
+      
+      if (topic === 'orders-topic') {
+        const event = JSON.parse(message.value.toString());
+        if (event.eventType === 'ORDER_PENDING_END') {
+          console.log(`📦 [Catalog Worker] Received PENDING order ${event.orderId}. Attempting stock reservation...`);
+          await catalogModel.handleOrderPending(event);
+        }
+        return;
+      }
+
       const command: CatalogCommand = JSON.parse(message.value.toString());
       
       console.log(`📦 [Catalog Worker] Received command: ${command.commandType}`);

@@ -72,6 +72,39 @@ export class CatalogModel {
     }
   }
 
+  async handleOrderPending(orderEvent: any) {
+    let success = true;
+    try {
+      await db.transaction().execute(async (trx) => {
+        for (const item of orderEvent.items) {
+          const res = await trx.updateTable('product')
+            .set((eb) => ({ stock_count: eb('stock_count', '-', item.quantity) }))
+            .where('product_id', '=', item.productId)
+            .where('stock_count', '>=', item.quantity)
+            .executeTakeFirst();
+            
+          if (res.numUpdatedRows === 0n) {
+            throw new Error(`Insufficient stock for ${item.productId}`);
+          }
+        }
+      });
+      console.log(`[CatalogModel] Reserved stock for order ${orderEvent.orderId}`);
+    } catch (e: any) {
+      success = false;
+      console.log(`[CatalogModel] Stock reservation denied for ${orderEvent.orderId}: ${e.message}`);
+    }
+    
+    const sagaResponse = {
+      eventType: success ? 'STOCK_RESERVED_END' : 'STOCK_DENIED_END',
+      orderId: orderEvent.orderId,
+      timestamp: new Date().toISOString()
+    };
+    await this.producer.send({
+      topic: 'orders-topic',
+      messages: [{ key: orderEvent.orderId, value: JSON.stringify(sagaResponse) }]
+    });
+  }
+
   private async emitEvent(event: CatalogEvent) {
     await this.producer.send({
       topic: 'catalog-topic',

@@ -89,6 +89,35 @@ export class CustomerModel {
     }
   }
 
+  async handleOrderPending(orderEvent: any) {
+    let success = false;
+    try {
+      await db.transaction().execute(async (trx) => {
+        const row = await trx.selectFrom('customer').select('id').where('customer_id', '=', orderEvent.customerId).executeTakeFirst();
+        if (row) success = true;
+      });
+      
+      if (success) {
+        console.log(`[CustomerModel] Validated customer ${orderEvent.customerId} for order ${orderEvent.orderId}`);
+      } else {
+        console.log(`[CustomerModel] Validation FAILED (Not Found) for customer ${orderEvent.customerId}`);
+      }
+    } catch (e: any) {
+      console.log(`[CustomerModel] Validation failed for customer ${orderEvent.customerId}: ${e.message}`);
+    }
+    
+    const sagaResponse = {
+      eventType: success ? 'CUSTOMER_VALIDATED_END' : 'CUSTOMER_INVALID_END',
+      orderId: orderEvent.orderId,
+      timestamp: new Date().toISOString()
+    };
+    
+    await this.producer.send({
+      topic: 'orders-topic',
+      messages: [{ key: orderEvent.orderId, value: JSON.stringify(sagaResponse) }]
+    });
+  }
+
   private async emitEvent(event: CustomerEvent) {
     await this.producer.send({
       topic: 'customer-topic',

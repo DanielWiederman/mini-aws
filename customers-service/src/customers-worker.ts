@@ -21,12 +21,22 @@ async function startWorker() {
   const customerModel = new CustomerModel(producer);
 
   await consumer.subscribe({ topic: 'customer-commands-topic', fromBeginning: false });
+  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: true });
 
-  console.log('🎧 Listening for Commands on customer-commands-topic...');
+  console.log('🎧 Listening for Commands on customer-commands-topic and orders-topic...');
 
   await consumer.run({
     eachMessage: async ({ topic, partition, message }) => {
       if (!message.value) return;
+
+      if (topic === 'orders-topic') {
+        const event = JSON.parse(message.value.toString());
+        if (event.eventType === 'ORDER_PENDING_END') {
+          console.log(`👤 [Customers Worker] Received PENDING order ${event.orderId}. Validating customer...`);
+          await customerModel.handleOrderPending(event);
+        }
+        return;
+      }
       
       const commandStr = message.value.toString();
       const command: CustomerCommand = JSON.parse(commandStr);

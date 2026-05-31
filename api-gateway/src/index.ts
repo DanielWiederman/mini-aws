@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { Kafka } from 'kafkajs';
-import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload } from 'shared-contracts';
+import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, OrderCommand, CreateOrderCommandPayload } from 'shared-contracts';
 import { open } from 'lmdb';
 import Redis from 'ioredis';
 
@@ -239,6 +239,53 @@ app.get('/api/catalog/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to read product from Redis' });
+  }
+});
+
+// --- ORDERS COMMAND SIDE (WRITE) ---
+
+app.post('/api/orders', async (req, res) => {
+  try {
+    const payload: CreateOrderCommandPayload = req.body;
+    
+    if (!payload.orderId || !payload.customerId || !payload.items || !Array.isArray(payload.items)) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const command: OrderCommand = {
+      commandType: 'CREATE_ORDER_START',
+      payload
+    };
+
+    await producer.send({
+      topic: 'orders-commands-topic',
+      messages: [{ key: payload.orderId, value: JSON.stringify(command) }]
+    });
+
+    console.log(`[API Gateway] Published CREATE_ORDER_START for ${payload.orderId}`);
+    const responseData = { message: 'Order creation accepted', orderId: payload.orderId };
+    
+    const idempotencyKey = req.header('Idempotency-Key') as string;
+    await idempotencyDb.put(idempotencyKey, responseData);
+    
+    res.status(202).json(responseData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- ORDERS READ SIDE (QUERIES) ---
+app.get('/api/orders/:id', async (req, res) => {
+  try {
+    const orderStr = await redis.hget('orders_view', req.params.id);
+    if (!orderStr) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    res.json(JSON.parse(orderStr));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to read order from Redis' });
   }
 });
 

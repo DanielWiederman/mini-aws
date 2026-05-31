@@ -63,15 +63,39 @@ export interface CatalogEvent {
 }
 
 // 3. Order Event (Streamed when a checkout happens)
+export type OrderCommandType = 'CREATE_ORDER_START';
+
+export interface OrderCommand {
+  commandType: OrderCommandType;
+  payload: any;
+}
+
+export interface CreateOrderCommandPayload {
+  orderId: string;
+  customerId: string;
+  items: OrderItem[];
+}
+
+export type OrderEventType = 
+  | 'ORDER_PENDING_END' 
+  | 'ORDER_COMPLETED_END' 
+  | 'ORDER_CANCELLED_END'
+  | 'STOCK_RESERVED_END'
+  | 'STOCK_DENIED_END'
+  | 'CUSTOMER_VALIDATED_END'
+  | 'CUSTOMER_INVALID_END';
+
 export interface OrderItem {
   productId: string;
   quantity: number;
 }
 
 export interface OrderEvent {
+  eventType?: OrderEventType;
   orderId: string;
-  customerId: string;
-  items: OrderItem[];
-  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  customerId?: string;
+  items?: OrderItem[];
+  status?: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  reason?: string; // used for cancellation reason (e.g. out of stock)
   timestamp: string;
 }

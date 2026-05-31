@@ -1,0 +1,28 @@
+@baseUrl = http://localhost:3000
+
+### =========================================
+### CQRS WRITE SIDE (Commands)
+### =========================================
+
+### Create a new order (Triggers Saga)
+POST {{baseUrl}}/api/orders
+Content-Type: application/json
+Idempotency-Key: req-order-1
+
+{
+  "orderId": "order_101",
+  "customerId": "cust_101",
+  "items": [
+    {
+      "productId": "prod_101",
+      "quantity": 2
+    }
+  ]
+}
+
+### =========================================
+### CQRS READ SIDE (Queries)
+### =========================================
+
+### Get an order status and details (Materialized View)
+GET {{baseUrl}}/api/orders/order_101

@@ -23,9 +23,10 @@ let catalogCount = [...catalogTable.getKeys()].length;
 // --- THE DERIVED READ MODEL (CQRS Materialized View) ---
 interface ReadModelOrderSummary {
   orderId: string;
+  status?: string;
   customerName: string;
   customerTier: string;
-  purchasedItems: { title: string; qty: number; totalCost: number }[];
+  purchasedItems: { productId: string; title: string; qty: number; totalCost: number }[];
   invoiceTotal: number;
   processedAt: string;
 }
@@ -75,14 +76,16 @@ async function startCqrsEngine() {
       // ROUTE 3: The Order arrives! Execute real-time stream processing join logic
       else if (topic === 'orders-topic') {
         const rawOrder = rawData as OrderEvent;
+        if (!rawOrder.eventType?.endsWith('_END')) return;
+        if (['STOCK_RESERVED_END', 'STOCK_DENIED_END', 'CUSTOMER_VALIDATED_END', 'CUSTOMER_INVALID_END'].includes(rawOrder.eventType)) return;
         
         // 1. Fetch details from LMDB synchronously (Blazing fast reads)
-        const customerProfile = customerTable.get(rawOrder.customerId) as CustomerEvent | undefined;
+        const customerProfile = customerTable.get(rawOrder.customerId!) as CustomerEvent | undefined;
         const customerName = customerProfile ? `${customerProfile.firstName} ${customerProfile.lastName}` : 'Unknown Customer';
         const customerTier = customerProfile ? customerProfile.tier : 'STANDARD';
 
         let invoiceTotal = 0;
-        const purchasedItems = rawOrder.items.map(item => {
+        const purchasedItems = (rawOrder.items || []).map(item => {
           const productDetail = catalogTable.get(item.productId) as CatalogEvent | undefined;
           const productTitle = productDetail ? productDetail.title : 'Missing Product Name';
           const currentPrice = productDetail ? productDetail.price : 0;
@@ -91,28 +94,33 @@ async function startCqrsEngine() {
           invoiceTotal += itemCost;
 
           return {
+            productId: item.productId,
             title: productTitle,
             qty: item.quantity,
             totalCost: parseFloat(itemCost.toFixed(2))
           };
         });
 
-        // 2. Apply business rules dynamically based on our joined state (e.g., Premium 10% discount)
+        // 2. Apply business rules dynamically based on our joined state
         if (customerTier === 'PREMIUM') {
           invoiceTotal = invoiceTotal * 0.9;
         }
 
-        // 3. Save directly to the materialized view
-        finalizedOrdersView.push({
+        const materializedOrder = {
           orderId: rawOrder.orderId,
+          status: rawOrder.status,
           customerName,
           customerTier,
           purchasedItems,
           invoiceTotal: parseFloat(invoiceTotal.toFixed(2)),
           processedAt: new Date().toLocaleTimeString()
-        });
+        };
 
-        updateDashboard(`New Order Processed: ${rawOrder.orderId}`);
+        // 3. Save directly to the materialized view in Redis
+        await redis.hset('orders_view', rawOrder.orderId, JSON.stringify(materializedOrder));
+
+        finalizedOrdersView.push(materializedOrder);
+        updateDashboard(`Order ${rawOrder.orderId} is now ${rawOrder.status}`);
       }
     }
   });
