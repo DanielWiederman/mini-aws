@@ -61,11 +61,15 @@ async function startCqrsEngine() {
 
       // ROUTE 2: Maintain the Catalog local state table (Live price tracking)
       else if (topic === 'catalog-topic') {
-        const product = rawData as CatalogEvent;
-        const isNew = catalogTable.get(product.productId) === undefined;
-        await catalogTable.put(product.productId, product);
-        if (isNew) catalogCount++;
-        updateDashboard(`Catalog updated: ${product.title} price is now $${product.price}`);
+        const catalog = rawData as CatalogEvent;
+        if (!catalog.eventType?.endsWith('_END')) return;
+
+        await catalogTable.put(catalog.productId, catalog);
+        
+        // Phase 2: Sync Materialized View to Redis
+        await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+
+        updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
       }
 
       // ROUTE 3: The Order arrives! Execute real-time stream processing join logic

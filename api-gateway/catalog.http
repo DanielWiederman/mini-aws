@@ -1,0 +1,36 @@
+@baseUrl = http://localhost:3000
+
+### =========================================
+### CQRS WRITE SIDE (Commands)
+### =========================================
+
+### Create a new product
+POST {{baseUrl}}/api/catalog
+Content-Type: application/json
+Idempotency-Key: req-prod-101
+
+{
+  "productId": "prod_101",
+  "title": "Ergonomic Keyboard",
+  "price": 120.50,
+  "stockCount": 42
+}
+
+### Update product price
+POST {{baseUrl}}/api/catalog/prod_101/price
+Content-Type: application/json
+Idempotency-Key: req-prod-101-price-1
+
+{
+  "price": 115.00
+}
+
+### =========================================
+### CQRS READ SIDE (Queries)
+### =========================================
+
+### Get a product by ID
+GET {{baseUrl}}/api/catalog/prod_101
+
+### Get all products
+GET {{baseUrl}}/api/catalog

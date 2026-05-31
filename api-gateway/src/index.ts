@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { Kafka } from 'kafkajs';
-import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload } from 'shared-contracts';
+import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload } from 'shared-contracts';
 import { open } from 'lmdb';
 import Redis from 'ioredis';
 
@@ -132,6 +132,77 @@ app.get('/api/customers', async (req, res) => {
   }
 });
 
+// --- CATALOG COMMAND SIDE (WRITE) ---
+
+app.post('/api/catalog', async (req, res) => {
+  try {
+    const payload: CreateProductCommandPayload = req.body;
+    
+    if (!payload.productId || !payload.title || typeof payload.price !== 'number' || typeof payload.stockCount !== 'number') {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const command: CatalogCommand = {
+      commandType: 'CREATE_PRODUCT_START',
+      payload
+    };
+
+    await producer.send({
+      topic: 'catalog-commands-topic',
+      messages: [{ key: payload.productId, value: JSON.stringify(command) }]
+    });
+
+    console.log(`[API Gateway] Published CREATE_PRODUCT_START for ${payload.productId}`);
+    const responseData = { message: 'Product creation accepted', productId: payload.productId };
+    
+    const idempotencyKey = req.header('Idempotency-Key') as string;
+    await idempotencyDb.put(idempotencyKey, responseData);
+    
+    res.status(202).json(responseData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/api/catalog/:id/price', async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { price } = req.body;
+
+    if (typeof price !== 'number') {
+      return res.status(400).json({ error: 'Invalid price' });
+    }
+
+    const payload: UpdatePriceCommandPayload = {
+      productId,
+      newPrice: price
+    };
+
+    const command: CatalogCommand = {
+      commandType: 'UPDATE_PRICE_START',
+      payload
+    };
+
+    await producer.send({
+      topic: 'catalog-commands-topic',
+      messages: [{ key: productId, value: JSON.stringify(command) }]
+    });
+
+    console.log(`[API Gateway] Published UPDATE_PRICE_START for ${productId}`);
+    const responseData = { message: 'Price update accepted', productId };
+    
+    const idempotencyKey = req.header('Idempotency-Key') as string;
+    await idempotencyDb.put(idempotencyKey, responseData);
+    
+    res.status(202).json(responseData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+
 app.get('/api/customers/:id', async (req, res) => {
   try {
     const customerStr = await redis.hget('customers_view', req.params.id);
@@ -142,6 +213,32 @@ app.get('/api/customers/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to read from materialized view in Redis' });
+  }
+});
+
+// --- CATALOG READ SIDE (QUERIES) ---
+
+app.get('/api/catalog', async (req, res) => {
+  try {
+    const allProducts = await redis.hgetall('catalog_view');
+    const results = Object.values(allProducts).map(v => JSON.parse(v));
+    res.json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to read catalog from Redis' });
+  }
+});
+
+app.get('/api/catalog/:id', async (req, res) => {
+  try {
+    const productStr = await redis.hget('catalog_view', req.params.id);
+    if (!productStr) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    res.json(JSON.parse(productStr));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to read product from Redis' });
   }
 });
 

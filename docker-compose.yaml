@@ -41,6 +41,15 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: customers_db
 
+  catalog-db:
+    image: postgres:15-alpine
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: catalog_db
+
   # Phase 2: Highly Available Materialized View Store
   redis:
     image: redis:7-alpine

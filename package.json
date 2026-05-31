@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n 'api,customers,catalog,orders,view' -c 'blue,green,cyan,yellow,magenta' 'pnpm dev:api' 'pnpm dev:customers' 'pnpm dev:catalog' 'pnpm dev:orders' 'pnpm dev:view'",
+    "dev": "pnpm -r --parallel --filter !mini-aws dev",
     "dev:api": "pnpm --filter api-gateway dev",
     "dev:customers": "pnpm --filter customers-service dev",
     "dev:catalog": "pnpm --filter catalog-service dev",

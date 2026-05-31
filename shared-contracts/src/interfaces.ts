@@ -33,7 +33,29 @@ export interface CustomerEvent {
 }
 
 // 2. Catalog/Product Event (Streamed when inventory changes or prices update)
+export type CatalogCommandType = 'CREATE_PRODUCT_START' | 'UPDATE_PRICE_START';
+
+export interface CatalogCommand {
+  commandType: CatalogCommandType;
+  payload: any;
+}
+
+export interface CreateProductCommandPayload {
+  productId: string;
+  title: string;
+  price: number;
+  stockCount: number;
+}
+
+export interface UpdatePriceCommandPayload {
+  productId: string;
+  newPrice: number;
+}
+
+export type CatalogEventType = 'CATALOG_CREATE_END' | 'CATALOG_UPDATE_END';
+
 export interface CatalogEvent {
+  eventType?: CatalogEventType;
   productId: string;
   title: string;
   price: number;

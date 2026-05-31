@@ -253,6 +253,12 @@ importers:
       kafkajs:
         specifier: ^2.2.4
         version: 2.2.4
+      kysely:
+        specifier: ^0.29.2
+        version: 0.29.2
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
       shared-contracts:
         specifier: workspace:*
         version: link:../shared-contracts
@@ -260,6 +266,9 @@ importers:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
       tsup:
         specifier: ^8.5.0
         version: 8.5.1(tsx@4.22.3)(typescript@6.0.3)
