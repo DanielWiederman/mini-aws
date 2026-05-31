@@ -3,18 +3,15 @@ import path from 'path';
 import { Kafka } from 'kafkajs';
 import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload } from 'shared-contracts';
 import { open } from 'lmdb';
+import Redis from 'ioredis';
 
 const app = express();
 app.use(express.json());
 
 const idempotencyDb = open({ path: './db/idempotency', compression: true });
 
-// CQRS Query Side: Connect directly to the derived-view-service's materialized state!
-const customerReadDb = open({ 
-  path: path.resolve(process.cwd(), '../derived-view-service/db/customers'), 
-  readOnly: true, 
-  compression: true 
-});
+// CQRS Query Side: Connect to the highly-available Redis store
+const redis = new Redis('redis://localhost:6379');
 
 const kafka = new Kafka({
   clientId: 'api-gateway',
@@ -115,33 +112,36 @@ app.post('/api/customers/:id/tier', async (req, res) => {
 
 // --- CQRS READ SIDE (QUERIES) ---
 
-app.get('/api/customers', (req, res) => {
+app.get('/api/customers', async (req, res) => {
   try {
     const tierFilter = req.query.tier as string;
+    
+    const allCustomers = await redis.hgetall('customers_view');
     const results = [];
     
-    for (const { key, value } of customerReadDb.getRange()) {
-      if (tierFilter && value.tier !== tierFilter) continue;
-      results.push(value);
+    for (const [key, valueStr] of Object.entries(allCustomers)) {
+      const customer = JSON.parse(valueStr);
+      if (tierFilter && customer.tier !== tierFilter) continue;
+      results.push(customer);
     }
     
     res.json(results);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to read from materialized view' });
+    res.status(500).json({ error: 'Failed to read from materialized view in Redis' });
   }
 });
 
-app.get('/api/customers/:id', (req, res) => {
+app.get('/api/customers/:id', async (req, res) => {
   try {
-    const customer = customerReadDb.get(req.params.id);
-    if (!customer) {
+    const customerStr = await redis.hget('customers_view', req.params.id);
+    if (!customerStr) {
       return res.status(404).json({ error: 'Customer not found' });
     }
-    res.json(customer);
+    res.json(JSON.parse(customerStr));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to read from materialized view' });
+    res.status(500).json({ error: 'Failed to read from materialized view in Redis' });
   }
 });
 

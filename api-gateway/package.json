@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "express": "^4.21.1",
+    "ioredis": "^5.11.0",
     "kafkajs": "^2.2.4",
     "lmdb": "^3.5.4",
     "shared-contracts": "workspace:*"

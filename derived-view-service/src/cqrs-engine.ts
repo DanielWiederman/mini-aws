@@ -1,6 +1,9 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { CustomerEvent, CatalogEvent, OrderEvent } from 'shared-contracts';
 import { open } from 'lmdb';
+import Redis from 'ioredis';
+
+const redis = new Redis('redis://localhost:6379');
 
 const kafka = new Kafka({
   clientId: 'derived-view-service',
@@ -43,8 +46,15 @@ async function startCqrsEngine() {
       // ROUTE 1: Maintain the Customer local state table
       if (topic === 'customer-topic') {
         const customer = rawData as CustomerEvent;
+        // Only process completed domain events
+        if (!customer.eventType?.endsWith('_END')) return;
+
         const isNew = customerTable.get(customer.customerId) === undefined;
         await customerTable.put(customer.customerId, customer);
+        
+        // --- PHASE 2: Sync Materialized View to Redis ---
+        await redis.hset('customers_view', customer.customerId, JSON.stringify(customer));
+
         if (isNew) customersCount++;
         updateDashboard(`Customer updated: ${customer.firstName} ${customer.lastName} (${customer.tier})`);
       }

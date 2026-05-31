@@ -17,12 +17,14 @@ When generating code for the `mini-aws` project, always adhere to the following 
    - Endpoints (POST/PUT) must implement Idempotency checking using `lmdb` and the `Idempotency-Key` header.
    - Must take REST payload, map to a Command from `shared-contracts` whose `commandType` ends with `_START` (e.g. `CREATE_CUSTOMER_START`), and publish to `<domain>-commands-topic`.
    - Must return HTTP 202 Accepted.
+   - Read endpoints (GET) MUST query **Redis** using `ioredis` (e.g. `redis.hget`). Do NOT read `lmdb` from the gateway.
 
 4. **CQRS Engine (View Side)**:
    - Must consume multiple `<domain>-topic`s to build state.
    - Must only process events that end in `_END`.
-   - Must save reference state data locally using `lmdb`.
-   - When a driver event occurs (like a new order), it must synchronously join data from `lmdb` to calculate a materialized view.
+   - Must save reference state data locally using `lmdb` for stream joining.
+   - When a driver event occurs, it must synchronously join data from `lmdb` to calculate a materialized view.
+   - The final materialized view MUST be written over the network to **Redis** using `ioredis` (e.g. `redis.hset('domain_view')`).
 
 5. **Shared Contracts**:
    - All Event and Command TypeScript interfaces MUST be located in the `shared-contracts` package.
@@ -35,3 +37,8 @@ When generating code for the `mini-aws` project, always adhere to the following 
    - Use TypeScript.
    - Use ES Modules (`import`/`export`).
    - Prefix terminal logs with an emoji representing the service.
+
+8. **Testing**:
+   - Every model and service MUST have tests. 
+   - Use the native `node:test` module combined with `tsx`.
+   - You MUST write End-to-End (E2E) tests that verify the entire CQRS lifecycle (API Gateway POST -> Wait -> API Gateway GET).

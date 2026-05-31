@@ -10,7 +10,8 @@
     "dev:orders": "pnpm --filter orders-service dev",
     "dev:view": "pnpm --filter derived-view-service dev",
     "typecheck": "pnpm -r typecheck",
-    "build": "pnpm -r --filter !mini-aws build"
+    "build": "pnpm -r --filter !mini-aws build",
+    "test:e2e": "tsx --test tests/*.e2e.ts"
   },
   "devEngines": {
     "packageManager": {
@@ -20,7 +21,8 @@
     }
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "tsx": "^4.22.3"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
