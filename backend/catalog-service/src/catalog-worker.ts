@@ -110,8 +110,9 @@ async function start() {
               title: payload.title,
               price: payload.price,
               stockCount: payload.stockCount,
-              thumbnail: payload.thumbnail || 'http://localhost:3001/aws-mini-default.png',
-              image: payload.image || 'http://localhost:3001/aws-mini-default.png'
+              description: (payload as any).description,
+              thumbnail: payload.thumbnail || payload.image || 'http://localhost:3001/aws-mini-default.png',
+              image: payload.image || payload.thumbnail || 'http://localhost:3001/aws-mini-default.png'
             });
             break;
           }

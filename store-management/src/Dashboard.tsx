@@ -226,7 +226,7 @@ export default function Dashboard() {
                       width: '48px', height: '48px', borderRadius: '12px', overflow: 'hidden', 
                       border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.5)'
                     }}>
-                      <img src={p.thumbnail || 'http://localhost:3001/aws-mini-default.png'} alt={p.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = 'http://localhost:3001/aws-mini-default.png' }} />
+                      <img src={p.image || p.thumbnail || 'http://localhost:3001/aws-mini-default.png'} alt={p.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = 'http://localhost:3001/aws-mini-default.png' }} />
                     </div>
                   </td>
                   <td>

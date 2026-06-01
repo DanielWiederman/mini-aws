@@ -26,9 +26,10 @@ export default function ProductCard({ product }: { product: Product }) {
         justifyContent: 'center'
       }}>
         <img 
-          src={product.thumbnail || '/aws-mini-default.png'} 
+          src={product.image || product.thumbnail || '/aws-mini-default.png'} 
           alt={product.title} 
           style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+          onError={(e) => { e.currentTarget.src = '/aws-mini-default.png' }}
         />
       </div>
       <div style={{ flex: 1 }}>
