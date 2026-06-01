@@ -17,7 +17,9 @@ export class CatalogModel {
             product_id: product.productId,
             title: product.title,
             price: product.price,
-            stock_count: product.stockCount
+            stock_count: product.stockCount,
+            thumbnail: product.thumbnail || '',
+            image: product.image || ''
           })
           .execute();
       });
@@ -47,7 +49,9 @@ export class CatalogModel {
           productId,
           title: productRow.title,
           price: newPrice,
-          stockCount: productRow.stock_count
+          stockCount: productRow.stock_count,
+          thumbnail: productRow.thumbnail,
+          image: productRow.image
         };
 
         // 1. Emit START event

@@ -6,6 +6,8 @@ interface Product {
   title: string;
   price: number;
   stockCount: number;
+  thumbnail?: string;
+  image?: string;
 }
 
 export default function ProductCard({ product }: { product: Product }) {
@@ -13,6 +15,22 @@ export default function ProductCard({ product }: { product: Product }) {
 
   return (
     <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', transition: 'transform 0.2s', height: '100%' }}>
+      <div style={{ 
+        width: '100%', 
+        aspectRatio: '1', 
+        borderRadius: 'var(--radius-md)', 
+        overflow: 'hidden', 
+        background: 'rgba(255, 255, 255, 0.05)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <img 
+          src={product.thumbnail || '/aws-mini-default.png'} 
+          alt={product.title} 
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+        />
+      </div>
       <div style={{ flex: 1 }}>
         <h3 style={{ fontSize: '1.25rem', marginBottom: '0.5rem' }}>{product.title}</h3>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>ID: {product.productId}</p>

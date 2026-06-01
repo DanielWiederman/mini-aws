@@ -8,6 +8,8 @@ export interface ProductTable {
   title: string;
   price: number;
   stock_count: number;
+  thumbnail: string;
+  image: string;
 }
 
 export interface Database {

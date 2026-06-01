@@ -22,6 +22,16 @@ async function initDB() {
     .addColumn('price', 'numeric', (col) => col.notNull())
     .addColumn('stock_count', 'integer', (col) => col.notNull())
     .execute();
+  
+  // Safely add columns for existing tables
+  try {
+    await db.schema.alterTable('product').addColumn('thumbnail', 'varchar', (col) => col.notNull().defaultTo('')).execute();
+  } catch (e) { /* ignore if exists */ }
+  
+  try {
+    await db.schema.alterTable('product').addColumn('image', 'varchar', (col) => col.notNull().defaultTo('')).execute();
+  } catch (e) { /* ignore if exists */ }
+
   console.log('📦 [Catalog DB] Initialized product table');
 }
 
@@ -59,7 +69,9 @@ async function start() {
               productId: payload.productId,
               title: payload.title,
               price: payload.price,
-              stockCount: payload.stockCount
+              stockCount: payload.stockCount,
+              thumbnail: payload.thumbnail || 'http://localhost:3001/aws-mini-default.png',
+              image: payload.image || 'http://localhost:3001/aws-mini-default.png'
             });
             break;
           }

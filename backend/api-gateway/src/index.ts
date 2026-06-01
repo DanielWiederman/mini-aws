@@ -178,10 +178,20 @@ app.post('/api/catalog', async (req, res) => {
     if (!payload.productId || !payload.title || typeof payload.price !== 'number' || typeof payload.stockCount !== 'number') {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+    
+    // Explicitly pick allowed fields
+    const sanitizedPayload: CreateProductCommandPayload = {
+      productId: payload.productId,
+      title: payload.title,
+      price: payload.price,
+      stockCount: payload.stockCount,
+      thumbnail: payload.thumbnail,
+      image: payload.image
+    };
 
     const command: CatalogCommand = {
       commandType: 'CREATE_PRODUCT_START',
-      payload
+      payload: sanitizedPayload
     };
 
     await sendTraced(producer, 'catalog-commands-topic', [

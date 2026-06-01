@@ -47,6 +47,8 @@ export interface CreateProductCommandPayload {
   title: string;
   price: number;
   stockCount: number;
+  thumbnail?: string;
+  image?: string;
 }
 
 export interface UpdatePriceCommandPayload {
@@ -62,6 +64,8 @@ export interface CatalogEvent {
   title: string;
   price: number;
   stockCount: number;
+  thumbnail?: string;
+  image?: string;
 }
 
 // 3. Order Event (Streamed when a checkout happens)

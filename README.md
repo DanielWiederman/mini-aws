@@ -17,7 +17,10 @@ It mimics the following AWS primitives locally:
 | `catalog-service` | DynamoDB Streams / EventBridge (product inventory events) |
 | `orders-service` | SQS / EventBridge (order checkout commands) |
 | `derived-view-service` | Lambda + Redis (CQRS materialized view processor) |
+| `assets-service` | Amazon S3 / MediaConvert (image uploads & resizing) |
 | `shared-contracts` | AWS Schema Registry (shared event type contracts) |
+| `store` (Next.js) | Public Storefront Application |
+| `store-management` (Vite) | Internal Admin Dashboard |
 | `otel-collector` | AWS X-Ray (Distributed Tracing & Metrics) |
 
 ---
@@ -129,22 +132,21 @@ mini-aws/                        ← monorepo root
 ├── tsconfig.base.json           # shared TS compiler settings (extended by each service)
 ├── docker-compose.yaml          # Kafka broker + topic init (mocks AWS MSK)
 │
-├── shared-contracts/            # workspace package — single source of truth for event types
-│   └── src/
-│       ├── interfaces.ts        # CustomerEvent, CatalogEvent, OrderEvent
-│       └── index.ts             # re-export entry point
+├── backend/                     # Backend microservices
+│   ├── api-gateway/             # Central REST API gateway handling auth & routing
+│   ├── assets-service/          # Image processing and upload microservice
+│   ├── catalog-service/         # streams product & price change events
+│   ├── customers-service/       # streams user profile & tier events
+│   ├── derived-view-service/    # CQRS consumer: joins streams → read model
+│   ├── logs-service/            # Centralized logging service
+│   ├── orders-service/          # streams checkout / order command events
+│   └── shared-contracts/        # single source of truth for event types
 │
-├── customers-service/           # workspace package — streams user profile & tier events
-│   └── src/customers-producer.ts
+├── store/                       # Next.js 16 storefront application
+│   └── src/app/
 │
-├── catalog-service/             # workspace package — streams product & price change events
-│   └── src/catalog-producer.ts
-│
-├── orders-service/              # workspace package — streams checkout / order command events
-│   └── src/orders-producer.ts
-│
-└── derived-view-service/        # workspace package — CQRS consumer: joins streams → read model
-    └── src/cqrs-engine.ts
+└── store-management/            # React + Vite internal management dashboard
+    └── src/
 ```
 
 ---
@@ -170,6 +172,8 @@ This repo is a **pnpm workspace** monorepo. All packages are managed from the ro
 | `pnpm dev:catalog` | Runs only `catalog-service` |
 | `pnpm dev:orders` | Runs only `orders-service` |
 | `pnpm dev:view` | Runs only `derived-view-service` (the live CQRS dashboard) |
+| `pnpm dev:assets` | Runs only `assets-service` |
+| `pnpm dev:logs` | Runs only `logs-service` |
 | `pnpm build` | Builds all packages with `tsup` (ESM output to each `dist/`) |
 | `pnpm typecheck` | Runs `tsc --noEmit` across every package |
 
@@ -273,10 +277,10 @@ docker-compose down
 
 This project will continue to grow. The planned phases are:
 
-### Phase 4 — Frontend Integration
-- React / Next.js frontend connecting to the API Gateway
-- Real-time updates via WebSockets or SSE fed by Kafka consumer events
-- Live order dashboard, catalog browser, customer profile management
+### Phase 4 — Frontend Integration (Completed)
+- React / Next.js frontend connecting to the API Gateway.
+- Live order dashboard, catalog browser, customer profile management.
+- Included an `assets-service` for handling image uploads dynamically.
 
 ### Phase 5 — Cloud-Ready
 - Replace Docker Kafka with **AWS MSK**
