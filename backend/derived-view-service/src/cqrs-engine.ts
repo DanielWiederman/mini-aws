@@ -86,9 +86,11 @@ async function startCqrsEngine() {
         // Phase 2: Sync Materialized View to Redis
         if (catalog.isDeleted) {
           await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+          await redis.publish('catalog_pubsub', JSON.stringify(catalog));
           updateDashboard(`Catalog product deleted: ${catalog.title}`);
         } else {
           await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+          await redis.publish('catalog_pubsub', JSON.stringify(catalog));
           updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
         }
 
@@ -138,8 +140,10 @@ async function startCqrsEngine() {
           processedAt: new Date().toLocaleTimeString()
         };
 
-        // 3. Save directly to the materialized view in Redis
-        await redis.hset('orders_view', rawOrder.orderId, JSON.stringify(materializedOrder));
+        // 3. Save directly to the materialized view in Redis and Publish to Pub/Sub
+        const payloadStr = JSON.stringify(materializedOrder);
+        await redis.hset('orders_view', rawOrder.orderId, payloadStr);
+        await redis.publish('orders_pubsub', payloadStr);
 
         finalizedOrdersView.push(materializedOrder);
         updateDashboard(`Order ${rawOrder.orderId} is now ${rawOrder.status}`);

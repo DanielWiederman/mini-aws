@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogOut, Edit2, Trash2, Calendar, UserPlus, Package, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import { Package, Plus, Trash2, Edit2, LogOut, Check, X, Calendar, UserPlus, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import { io } from 'socket.io-client';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 
@@ -28,6 +29,43 @@ export default function Dashboard() {
       fetchOrders();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    const socket = io('http://localhost:4000');
+    
+    socket.on('catalogUpdate', (event) => {
+      setProducts(prev => {
+        const index = prev.findIndex(p => p.productId === event.productId);
+        if (index >= 0) {
+          const newProducts = [...prev];
+          newProducts[index] = { ...newProducts[index], ...event };
+          return newProducts;
+        } else if (event.eventType === 'CATALOG_UPDATE_END' && !event.isDeleted) {
+          // It's a new product, prepend it
+          return [event, ...prev];
+        }
+        return prev;
+      });
+    });
+
+    socket.on('orderUpdate', (event) => {
+      if (activeTab === 'orders') {
+        setOrders(prev => {
+          const index = prev.findIndex(o => o.orderId === event.orderId);
+          if (index >= 0) {
+            const newOrders = [...prev];
+            newOrders[index] = { ...newOrders[index], ...event };
+            return newOrders;
+          } else {
+            // New order, prepend to top of list
+            return [event, ...prev];
+          }
+        });
+      }
+    });
+
+    return () => { socket.disconnect(); };
+  }, [activeTab, token]);
 
   const fetchOrders = async (cursor?: string) => {
     try {

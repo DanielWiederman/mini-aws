@@ -1,5 +1,5 @@
-import ProductCard from '@/components/ProductCard';
 import Link from 'next/link';
+import CatalogGridClient from '@/components/CatalogGridClient';
 
 async function getCatalog(page: number, limit: number) {
   try {
@@ -33,17 +33,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ [
         </p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem' }}>
-        {catalog.data.map((product: any) => (
-          <ProductCard key={product.productId} product={product} />
-        ))}
-      </div>
-
-      {catalog.data.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-secondary)' }}>
-          No products found.
-        </div>
-      )}
+      <CatalogGridClient initialCatalog={catalog.data} />
 
       {/* Pagination Controls */}
       {catalog.totalPages > 1 && (

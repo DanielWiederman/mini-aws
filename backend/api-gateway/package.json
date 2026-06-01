@@ -17,7 +17,8 @@
     "jsonwebtoken": "^9.0.3",
     "kafkajs": "^2.2.4",
     "lmdb": "^3.5.4",
-    "shared-contracts": "workspace:*"
+    "shared-contracts": "workspace:*",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
