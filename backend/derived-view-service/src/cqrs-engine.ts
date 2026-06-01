@@ -110,7 +110,7 @@ async function startCqrsEngine() {
         const purchasedItems = (rawOrder.items || []).map(item => {
           const productDetail = catalogTable.get(item.productId) as CatalogEvent | undefined;
           const productTitle = productDetail ? productDetail.title : 'Missing Product Name';
-          const currentPrice = productDetail ? productDetail.price : 0;
+          const currentPrice = productDetail ? Number(productDetail.price) : 0;
           const itemCost = currentPrice * item.quantity;
           
           invoiceTotal += itemCost;

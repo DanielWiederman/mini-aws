@@ -16,9 +16,45 @@ export default function Dashboard() {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [creatingProduct, setCreatingProduct] = useState<any>(null);
 
+  const [activeTab, setActiveTab] = useState<'catalog' | 'orders'>('catalog');
+  const [orders, setOrders] = useState<any[]>([]);
+  const [nextOrderCursor, setNextOrderCursor] = useState<string | null>(null);
+  const [orderFilter, setOrderFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED' | 'PENDING'>('ALL');
+
   useEffect(() => {
-    fetchProducts();
-  }, []);
+    if (activeTab === 'catalog') {
+      fetchProducts();
+    } else {
+      fetchOrders();
+    }
+  }, [activeTab]);
+
+  const fetchOrders = async (cursor?: string) => {
+    try {
+      const url = new URL('http://localhost:3000/api/orders');
+      if (cursor) url.searchParams.append('cursor', cursor);
+      
+      const res = await fetch(url.toString(), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
+      
+      const data = await res.json();
+      
+      if (cursor) {
+        setOrders(prev => [...prev, ...(data.data || [])]);
+      } else {
+        setOrders(data.data || []);
+      }
+      setNextOrderCursor(data.nextCursor || null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchProducts = async () => {
     const res = await fetch('http://localhost:3000/api/catalog?limit=50');
@@ -34,17 +70,18 @@ export default function Dashboard() {
 
   const deleteProduct = async (id: string) => {
     if (!confirm('Are you sure you want to soft delete this product? It will no longer appear in the catalog.')) return;
-    await fetch(`http://localhost:3000/api/catalog/${id}`, {
+    const res = await fetch(`http://localhost:3000/api/catalog/${id}`, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` }
     });
+    if (res.status === 401) return handleLogout();
     alert('Product deletion scheduled via event stream!');
     setTimeout(fetchProducts, 1000);
   };
 
   const updateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    await fetch(`http://localhost:3000/api/catalog/${editingProduct.productId}`, {
+    const res = await fetch(`http://localhost:3000/api/catalog/${editingProduct.productId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
@@ -56,6 +93,7 @@ export default function Dashboard() {
         image: editingProduct.image
       })
     });
+    if (res.status === 401) return handleLogout();
     setEditingProduct(null);
     alert('Product update dispatched!');
     setTimeout(fetchProducts, 1000);
@@ -97,11 +135,12 @@ export default function Dashboard() {
     };
 
     const idempotencyKey = `create-${Date.now()}`;
-    await fetch(`http://localhost:3000/api/catalog`, {
+    const res = await fetch(`http://localhost:3000/api/catalog`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(payload)
     });
+    if (res.status === 401) return handleLogout();
     setCreatingProduct(null);
     alert('Product creation dispatched!');
     setTimeout(fetchProducts, 1000);
@@ -179,13 +218,34 @@ export default function Dashboard() {
             <LayoutDashboard size={24} color="var(--primary)" />
           </div>
           <div>
-            <h1 style={{ marginBottom: '4px', fontSize: '1.75rem' }}>Store <span className="text-gradient">Management</span></h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              <ShieldCheck size={16} color="var(--accent)" />
-              Authenticated as <strong style={{ color: 'var(--text-main)' }}>{role}</strong>
-            </div>
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.5rem', marginBottom: '8px' }}>
+              Store Management
+            </h1>
+            <p style={{ color: 'var(--text-secondary)' }}>Logged in as <strong style={{ color: 'var(--primary)' }}>{role}</strong></p>
           </div>
         </div>
+        
+        <div style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px', borderRadius: '12px', border: '1px solid var(--panel-border)' }}>
+          <button 
+            onClick={() => setActiveTab('catalog')}
+            style={{ 
+              padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600,
+              background: activeTab === 'catalog' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'catalog' ? '#fff' : 'var(--text-muted)',
+              transition: 'all 0.2s'
+            }}
+          >Catalog</button>
+          <button 
+            onClick={() => setActiveTab('orders')}
+            style={{ 
+              padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600,
+              background: activeTab === 'orders' ? 'var(--primary)' : 'transparent',
+              color: activeTab === 'orders' ? '#fff' : 'var(--text-muted)',
+              transition: 'all 0.2s'
+            }}
+          >Orders</button>
+        </div>
+
         <div style={{ display: 'flex', gap: '16px' }}>
           <button className="btn-primary" onClick={() => setCreatingProduct({ productId: `prod_${Date.now()}`, title: '', description: '', price: 0, stockCount: 0, image: '', thumbnail: '' })} style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--panel-border)' }}>
             <Package size={18} /> Add Product
@@ -201,27 +261,22 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* CATALOG PANEL */}
-      <div className="glass-panel">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-          <Package size={24} color="var(--primary)" />
-          <h2>Catalog Overview</h2>
-        </div>
-        <div className="table-container">
-          <table>
+      {activeTab === 'catalog' ? (
+        <div className="glass-panel" style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
-              <tr>
-                <th>Item</th>
-                <th>Product Info</th>
-                <th>Current Price</th>
-                <th>Stock</th>
-                <th style={{ textAlign: 'right' }}>Management</th>
+              <tr style={{ borderBottom: '1px solid var(--panel-border)' }}>
+                <th style={{ padding: '16px', color: 'var(--text-muted)', fontWeight: 600 }}>Image</th>
+                <th style={{ padding: '16px', color: 'var(--text-muted)', fontWeight: 600 }}>Product Name</th>
+                <th style={{ padding: '16px', color: 'var(--text-muted)', fontWeight: 600 }}>Price</th>
+                <th style={{ padding: '16px', color: 'var(--text-muted)', fontWeight: 600 }}>Stock</th>
+                <th style={{ padding: '16px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {products.map(p => (
-                <tr key={p.productId}>
-                  <td style={{ width: '80px' }}>
+                <tr key={p.productId} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                  <td style={{ padding: '16px' }}>
                     <div style={{ 
                       width: '48px', height: '48px', borderRadius: '12px', overflow: 'hidden', 
                       border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.5)'
@@ -230,50 +285,120 @@ export default function Dashboard() {
                     </div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 600, fontSize: '1.05rem', marginBottom: '4px' }}>{p.title}</div>
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {p.description || 'No description provided.'}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--primary)', marginTop: '4px', fontFamily: 'monospace' }}>ID: {p.productId}</div>
+                    <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>{p.title}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{p.productId}</div>
                   </td>
-                  <td>
-                    <div style={{ fontWeight: 600, fontSize: '1.1rem' }}>${p.price.toFixed(2)}</div>
+                  <td style={{ padding: '16px', fontWeight: 600, color: 'var(--primary)' }}>${Number(p.price || 0).toFixed(2)}</td>
+                  <td style={{ padding: '16px' }}>
+                    <span className="badge" style={{ background: Number(p.stockCount) > 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: Number(p.stockCount) > 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      {p.stockCount} left
+                    </span>
                   </td>
-                  <td>
-                    <div style={{ 
-                      display: 'inline-block', 
-                      padding: '4px 10px', 
-                      borderRadius: '20px', 
-                      background: p.stockCount > 10 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                      color: p.stockCount > 10 ? '#4ade80' : '#f87171',
-                      fontSize: '0.85rem',
-                      fontWeight: 600
-                    }}>
-                      {p.stockCount} units
-                    </div>
-                  </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ padding: '16px', textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                      <button className="action-btn edit" title="Edit Product Details" onClick={() => setEditingProduct(p)}><Edit2 size={18} /></button>
-                      <button className="action-btn schedule" title="Schedule Price Change" onClick={() => {
-                        setSchedulingPrice({ ...p, newPrice: p.price, triggerAt: new Date() });
-                      }}><Calendar size={18} /></button>
-                      <button className="action-btn delete" title="Remove Product" onClick={() => deleteProduct(p.productId)}><Trash2 size={18} /></button>
+                      <button className="icon-btn" onClick={() => setSchedulingPrice(p)} title="Schedule Price Change">
+                        <Calendar size={16} />
+                      </button>
+                      <button className="icon-btn" onClick={() => setEditingProduct(p)} title="Edit Product">
+                        <Edit2 size={16} />
+                      </button>
+                      {role === 'SUPER_ADMIN' && (
+                        <button className="icon-btn btn-danger" onClick={() => deleteProduct(p.productId)} title="Delete Product" style={{ color: 'var(--danger)' }}>
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
               {products.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: '48px', color: 'var(--text-muted)' }}>
-                    No products found in the catalog.
+                  <td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No products found. Add some!
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-      </div>
+      ) : (
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-main)' }}>Order History</h2>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {['ALL', 'COMPLETED', 'PENDING', 'CANCELLED'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setOrderFilter(filter as any)}
+                  style={{
+                    padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--panel-border)', cursor: 'pointer', fontSize: '0.85rem',
+                    background: orderFilter === filter ? 'var(--primary)' : 'transparent',
+                    color: orderFilter === filter ? '#fff' : 'var(--text-muted)',
+                  }}
+                >
+                  {filter}
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {orders.filter(o => orderFilter === 'ALL' || o.status === orderFilter).length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>No orders match this filter.</div>
+            ) : (
+              orders.filter(o => orderFilter === 'ALL' || o.status === orderFilter).map(order => (
+                <div key={order.orderId} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--panel-border)', borderRadius: '12px', padding: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1rem', color: 'var(--text-main)' }}>{order.orderId}</h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                        Customer: <span style={{ color: 'var(--text-main)' }}>{order.customerName}</span> ({order.customerTier})
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span className="badge" style={{ 
+                        background: order.status === 'COMPLETED' ? 'rgba(16, 185, 129, 0.1)' : order.status === 'CANCELLED' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                        color: order.status === 'COMPLETED' ? 'var(--success)' : order.status === 'CANCELLED' ? 'var(--danger)' : '#f59e0b'
+                      }}>
+                        {order.status}
+                      </span>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '6px' }}>{order.processedAt}</p>
+                    </div>
+                  </div>
+                  
+                  <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px', marginTop: '12px' }}>
+                    <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>Purchased Items</h4>
+                    <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {order.purchasedItems.map((item: any, idx: number) => (
+                        <li key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
+                          <span><span style={{ color: 'var(--text-muted)' }}>{item.qty}x</span> {item.title}</span>
+                          <span>${item.totalCost}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', paddingTop: '12px', borderTop: '1px dashed rgba(255,255,255,0.1)', fontWeight: 'bold' }}>
+                      <span>Total</span>
+                      <span style={{ color: 'var(--primary)' }}>${order.invoiceTotal}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {nextOrderCursor && (
+            <div style={{ textAlign: 'center', marginTop: '24px' }}>
+              <button 
+                className="btn-primary" 
+                onClick={() => fetchOrders(nextOrderCursor)}
+                style={{ padding: '8px 24px' }}
+              >
+                Load More Orders
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Create Product Modal */}
       {creatingProduct && (

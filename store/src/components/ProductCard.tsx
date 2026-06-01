@@ -37,7 +37,7 @@ export default function ProductCard({ product }: { product: Product }) {
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>ID: {product.productId}</p>
         <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--primary)' }}>
-            ${product.price.toFixed(2)}
+            ${Number(product.price || 0).toFixed(2)}
           </span>
           <span className="badge" style={{ background: isOutOfStock ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)', color: isOutOfStock ? 'var(--danger)' : 'var(--success)' }}>
             {isOutOfStock ? 'Out of Stock' : `${product.stockCount} in stock`}

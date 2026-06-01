@@ -94,7 +94,7 @@ export default function CheckoutPage() {
     );
   }
 
-  const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const total = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem 0' }}>
@@ -123,7 +123,7 @@ export default function CheckoutPage() {
                     <div style={{ fontWeight: 500 }}>{item.title}</div>
                     <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>Qty: {item.quantity}</div>
                   </div>
-                  <div style={{ fontWeight: 600 }}>${(item.price * item.quantity).toFixed(2)}</div>
+                  <div style={{ fontWeight: 600 }}>${(Number(item.price || 0) * item.quantity).toFixed(2)}</div>
                 </div>
               ))}
             </div>

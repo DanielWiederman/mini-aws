@@ -188,6 +188,7 @@ export class CatalogModel {
 
   async handleOrderPending(orderEvent: any) {
     let success = true;
+    let updatedProducts: CatalogEvent[] = [];
     try {
       await db.transaction().execute(async (trx) => {
         for (const item of orderEvent.items) {
@@ -195,14 +196,32 @@ export class CatalogModel {
             .set((eb) => ({ stock_count: eb('stock_count', '-', item.quantity) }))
             .where('product_id', '=', item.productId)
             .where('stock_count', '>=', item.quantity)
+            .returningAll()
             .executeTakeFirst();
             
-          if (res.numUpdatedRows === 0n) {
+          if (!res) {
             throw new Error(`Insufficient stock for ${item.productId}`);
           }
+          
+          updatedProducts.push({
+            productId: res.product_id,
+            title: res.title,
+            price: parseFloat(res.price as any),
+            stockCount: parseInt(res.stock_count as any, 10),
+            description: res.description ?? undefined,
+            thumbnail: res.thumbnail,
+            image: res.image,
+            isDeleted: !!res.deleted_at,
+            eventType: 'CATALOG_UPDATE_END'
+          });
         }
       });
       console.log(`[CatalogModel] Reserved stock for order ${orderEvent.orderId}`);
+      
+      // Emit updates to sync Redis view
+      for (const prod of updatedProducts) {
+        await this.emitEvent(prod);
+      }
     } catch (e: any) {
       success = false;
       console.log(`[CatalogModel] Stock reservation denied for ${orderEvent.orderId}: ${e.message}`);

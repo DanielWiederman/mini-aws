@@ -39,6 +39,16 @@ export const removeFromCart = (productId: string) => {
   saveCart(newCart);
 };
 
+export const updateQuantity = (productId: string, quantity: number) => {
+  if (quantity < 1) return removeFromCart(productId);
+  const cart = getCart();
+  const existing = cart.find(item => item.productId === productId);
+  if (existing) {
+    existing.quantity = quantity;
+    saveCart(cart);
+  }
+};
+
 export const clearCart = () => {
   saveCart([]);
 };

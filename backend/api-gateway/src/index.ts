@@ -485,6 +485,35 @@ app.get('/api/orders/:id', async (req, res) => {
   }
 });
 
+app.get('/api/orders', requireAdmin, async (req, res) => {
+  try {
+    const ordersMap = await redis.hgetall('orders_view');
+    const orders = Object.values(ordersMap).map(o => JSON.parse(o));
+    
+    // Sort by processedAt descending (or orderId as a proxy for time)
+    orders.sort((a, b) => b.orderId.localeCompare(a.orderId));
+    
+    const cursor = req.query.cursor as string;
+    const limit = parseInt(req.query.limit as string) || 20;
+
+    let sortedOrders = orders;
+    if (cursor) {
+      const cursorIndex = sortedOrders.findIndex(o => o.orderId === cursor);
+      if (cursorIndex >= 0) {
+        sortedOrders = sortedOrders.slice(cursorIndex + 1);
+      }
+    }
+    
+    const paginated = sortedOrders.slice(0, limit);
+    const nextCursor = paginated.length === limit ? paginated[paginated.length - 1].orderId : null;
+    
+    res.json({ data: paginated, nextCursor });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch orders' });
+  }
+});
+
 async function start() {
   await producer.connect();
   console.log('[API Gateway] Connected to Kafka');

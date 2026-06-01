@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { getCart, removeFromCart, clearCart, CartItem } from '@/lib/cart';
+import { getCart, removeFromCart, clearCart, updateQuantity, CartItem } from '@/lib/cart';
 import Link from 'next/link';
 
 export default function CartPage() {
@@ -18,7 +18,11 @@ export default function CartPage() {
 
   if (!isClient) return null; // Hydration mismatch prevention
 
-  const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const handleQuantity = (productId: string, quantity: number) => {
+    updateQuantity(productId, quantity);
+  };
+
+  const total = cart.reduce((sum, item) => sum + (Number(item.price || 0) * item.quantity), 0);
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '2rem 0' }}>
@@ -49,9 +53,15 @@ export default function CartPage() {
                       <div style={{ fontWeight: 600 }}>{item.title}</div>
                       <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>ID: {item.productId}</div>
                     </td>
-                    <td style={{ padding: '1rem' }}>${item.price.toFixed(2)}</td>
-                    <td style={{ padding: '1rem' }}>{item.quantity}</td>
-                    <td style={{ padding: '1rem', fontWeight: 600 }}>${(item.price * item.quantity).toFixed(2)}</td>
+                    <td style={{ padding: '1rem' }}>${Number(item.price || 0).toFixed(2)}</td>
+                    <td style={{ padding: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <button className="icon-btn" onClick={() => handleQuantity(item.productId, item.quantity - 1)}>-</button>
+                        <span>{item.quantity}</span>
+                        <button className="icon-btn" onClick={() => handleQuantity(item.productId, item.quantity + 1)}>+</button>
+                      </div>
+                    </td>
+                    <td style={{ padding: '1rem', fontWeight: 600 }}>${(Number(item.price || 0) * item.quantity).toFixed(2)}</td>
                     <td style={{ padding: '1rem', textAlign: 'right' }}>
                       <button 
                         onClick={() => removeFromCart(item.productId)}
