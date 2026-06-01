@@ -9,7 +9,7 @@
     "esModuleInterop": true
   },
   "include": [
-    "tests/**/*.ts"
+    "backend/tests/**/*.ts"
   ],
   "exclude": [
     "node_modules"

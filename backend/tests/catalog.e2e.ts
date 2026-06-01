@@ -1,10 +1,10 @@
-import test from 'node:test';
+import test, { TestContext } from 'node:test';
 import assert from 'node:assert';
 
 const API_URL = 'http://127.0.0.1:3000/api';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-test('Catalog Service E2E Lifecycle (CQRS)', async (t) => {
+test('Catalog Service E2E Lifecycle (CQRS)', async (t: TestContext) => {
   const testProductId = `test_prod_${Date.now()}`;
 
   await t.test('1. Create Product Command', async () => {
