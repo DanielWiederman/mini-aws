@@ -1,0 +1,20 @@
+{
+  "name": "logs-service",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/logs-worker.ts"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4",
+    "kysely": "^0.29.2",
+    "pg": "^8.11.3",
+    "shared-contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "@types/pg": "^8.11.2",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}

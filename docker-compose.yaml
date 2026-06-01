@@ -52,15 +52,35 @@ services:
 
   orders-db:
     image: postgres:15-alpine
-    ports:
-      - "5435:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: orders_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - orders-db-data:/var/lib/postgresql/data
+
+  logs-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: logs_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - logs-db-data:/var/lib/postgresql/data
 
   # Phase 2: Highly Available Materialized View Store
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+volumes:
+  kafka_data:
+  catalog-db-data:
+  customers-db-data:
+  orders-db-data:
+  logs-db-data:

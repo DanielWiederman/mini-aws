@@ -370,6 +370,10 @@ importers:
         version: 6.0.3
 
   shared-contracts:
+    dependencies:
+      kafkajs:
+        specifier: ^2.2.4
+        version: 2.2.4
     devDependencies:
       tsup:
         specifier: ^8.5.0
