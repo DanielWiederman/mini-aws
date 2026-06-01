@@ -80,3 +80,4 @@ graph TD
    * Storefront: `http://localhost:3001`
    * Management Dashboard: `http://localhost:5178`
    * API Gateway: `http://localhost:3000`
+   * Jaeger: `http://localhost:16686` 
