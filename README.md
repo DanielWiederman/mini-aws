@@ -339,7 +339,7 @@ flowchart TD
 | Language | TypeScript (Node.js) |
 | API Gateway | Express |
 | Messaging | Apache Kafka (KafkaJS client) |
-| Database | PostgreSQL (Kysely) & Redis (ioredis) |
+| Database | PostgreSQL (Kysely), Redis (ioredis), & LMDB (Idempotency Cache) |
 | Tracing & Metrics | OpenTelemetry, Prometheus, Jaeger v2 |
 | Infrastructure | Docker Compose |
 | Monorepo | pnpm workspaces |
