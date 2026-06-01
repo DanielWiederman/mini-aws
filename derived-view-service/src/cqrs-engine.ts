@@ -53,11 +53,25 @@ async function startCqrsEngine() {
         const isNew = customerTable.get(customer.customerId) === undefined;
         await customerTable.put(customer.customerId, customer);
         
-        // --- PHASE 2: Sync Materialized View to Redis ---
-        await redis.hset('customers_view', customer.customerId, JSON.stringify(customer));
+        // Expose public profile (without password hash)
+        const publicProfile = {
+          customerId: customer.customerId,
+          firstName: customer.firstName,
+          lastName: customer.lastName,
+          email: customer.email,
+          tier: customer.tier
+        };
+        await redis.hset('customers_view', customer.customerId, JSON.stringify(publicProfile));
 
-        if (isNew) customersCount++;
-        updateDashboard(`Customer updated: ${customer.firstName} ${customer.lastName} (${customer.tier})`);
+        // Store auth details securely
+        if (customer.passwordHash) {
+          await redis.hset('auth_view', customer.email, JSON.stringify({
+            customerId: customer.customerId,
+            passwordHash: customer.passwordHash
+          }));
+        }
+        
+        updateDashboard(isNew ? `New Customer: ${customer.firstName}` : `Tier Upgraded: ${customer.firstName} -> ${customer.tier}`);
       }
 
       // ROUTE 2: Maintain the Catalog local state table (Live price tracking)

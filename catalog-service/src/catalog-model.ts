@@ -51,7 +51,7 @@ export class CatalogModel {
         };
 
         // 1. Emit START event
-        await this.emitEvent({ ...eventPayload, eventType: 'UPDATE_PRICE_START' as any });
+        await this.emitEvent({ ...(eventPayload as any), eventType: 'UPDATE_PRICE_START' as any });
 
         // 2. Perform DB update
         await trx.updateTable('product')
@@ -64,7 +64,7 @@ export class CatalogModel {
       
       // 3. Emit END event
       if (eventPayload) {
-        await this.emitEvent({ ...eventPayload, eventType: 'CATALOG_UPDATE_END' });
+        await this.emitEvent({ ...(eventPayload as any), eventType: 'CATALOG_UPDATE_END' });
       }
     } catch (e) {
       console.error('Failed to update price', e);

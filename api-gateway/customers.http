@@ -9,7 +9,8 @@ Idempotency-Key: req-create-cust-101
   "customerId": "cust_101",
   "firstName": "John",
   "lastName": "Doe",
-  "email": "john.doe@example.com"
+  "email": "john.doe@example.com",
+  "password": "secretpassword"
 }
 
 ### Create the same customer again (Should return 202 from cache due to Idempotency-Key)
@@ -21,7 +22,8 @@ Idempotency-Key: req-create-cust-101
   "customerId": "cust_101",
   "firstName": "John",
   "lastName": "Doe",
-  "email": "john.doe@example.com"
+  "email": "john.doe@example.com",
+  "password": "secretpassword"
 }
 
 ### Upgrade a customer's tier to PREMIUM
@@ -33,9 +35,26 @@ Idempotency-Key: req-upgrade-tier-101
   "tier": "PREMIUM"
 }
 
+### Login with the customer
+# @name loginRequest
+POST {{baseUrl}}/api/customers/login
+Content-Type: application/json
+
+{
+  "email": "john.doe@example.com",
+  "password": "secretpassword"
+}
+
+### Logout the customer
+POST {{baseUrl}}/api/customers/logout
+
 ### =========================================
 ### CQRS READ SIDE (Queries)
 ### =========================================
+
+### Get the current authenticated customer's profile
+# The REST Client extension automatically sends the cookie received from the login response.
+GET {{baseUrl}}/api/customers/me
 
 ### Get a customer by ID
 GET {{baseUrl}}/api/customers/cust_101

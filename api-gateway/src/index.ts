@@ -4,9 +4,13 @@ import { Kafka, Partitioners } from 'kafkajs';
 import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, OrderCommand, CreateOrderCommandPayload, sendTraced } from 'shared-contracts';
 import { open } from 'lmdb';
 import Redis from 'ioredis';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
 
 const app = express();
 app.use(express.json());
+app.use(cookieParser());
 
 const idempotencyDb = open({ path: './db/idempotency', compression: true });
 
@@ -21,7 +25,7 @@ const kafka = new Kafka({
 const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
 
 const idempotencyMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  if (req.method !== 'POST') return next();
+  if (req.method !== 'POST' || req.path === '/api/customers/login' || req.path === '/api/customers/logout') return next();
   const key = req.header('Idempotency-Key');
   if (!key) {
     return res.status(400).json({ error: 'Missing Idempotency-Key header' });
@@ -40,7 +44,7 @@ app.post('/api/customers', async (req, res) => {
   try {
     const payload: CreateCustomerCommandPayload = req.body;
     
-    if (!payload.customerId || !payload.firstName || !payload.lastName || !payload.email) {
+    if (!payload.customerId || !payload.firstName || !payload.lastName || !payload.email || !payload.password) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -65,6 +69,40 @@ app.post('/api/customers', async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
+});
+
+app.post('/api/customers/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Missing email or password' });
+    }
+
+    const authStr = await redis.hget('auth_view', email);
+    if (!authStr) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const authData = JSON.parse(authStr);
+    const isValid = await bcrypt.compare(password, authData.passwordHash);
+    
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ customerId: authData.customerId }, 'secret_key', { expiresIn: '1h' });
+    res.cookie('jwt', token, { httpOnly: true, maxAge: 3600000 });
+    res.json({ token, customerId: authData.customerId });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/api/customers/logout', (req, res) => {
+  res.clearCookie('jwt');
+  res.json({ message: 'Logged out successfully' });
 });
 
 app.post('/api/customers/:id/tier', async (req, res) => {
@@ -194,6 +232,27 @@ app.post('/api/catalog/:id/price', async (req, res) => {
   }
 });
 
+
+app.get('/api/customers/me', async (req, res) => {
+  try {
+    const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'Unauthorized: No token provided' });
+    }
+
+    const decoded = jwt.verify(token, 'secret_key') as { customerId: string };
+    const customerStr = await redis.hget('customers_view', decoded.customerId);
+    
+    if (!customerStr) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    
+    res.json(JSON.parse(customerStr));
+  } catch (err) {
+    console.error(err);
+    res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  }
+});
 
 app.get('/api/customers/:id', async (req, res) => {
   try {

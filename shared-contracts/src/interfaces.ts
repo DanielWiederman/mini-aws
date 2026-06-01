@@ -13,6 +13,7 @@ export interface CreateCustomerCommandPayload {
   firstName: string;
   lastName: string;
   email: string;
+  password?: string;
 }
 
 export interface UpgradeTierCommandPayload {
@@ -30,6 +31,7 @@ export interface CustomerEvent {
   lastName: string;
   email: string;
   tier: 'STANDARD' | 'PREMIUM'; // Affects order calculations
+  passwordHash?: string;
 }
 
 // 2. Catalog/Product Event (Streamed when inventory changes or prices update)

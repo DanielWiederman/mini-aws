@@ -30,9 +30,10 @@ test('Saga Concurrency & Stress Test (100 Concurrent Orders for 10 Items)', asyn
         },
         body: JSON.stringify({ 
           customerId: `${customerBaseId}_${i}`, 
-          firstName: 'Stress', 
-          lastName: `User ${i}`, 
-          email: `stress-${timestamp}-${i}@example.com`,
+          firstName: `StressUser${i}`,
+          lastName: 'Testing',
+          email: `stress_user_${timestamp}_${i}@example.com`,
+          password: 'password123',
           tier: 'STANDARD'
         })
       });

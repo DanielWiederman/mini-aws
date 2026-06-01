@@ -69,7 +69,6 @@ async function start() {
         }
       } catch (e) {
         console.error(`🛒 Failed to process message from ${topic}`, e);
-        await logger.error(`Failed to process message from ${topic}`, e, { topic, messageKey: message.key?.toString() });
       }
     }),
   });

@@ -14,7 +14,14 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t) => {
     await fetch(`${API_URL}/customers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `req-c-${timestamp}` },
-      body: JSON.stringify({ customerId: testCustomerId, firstName: 'Saga', lastName: 'Test', email: `test-${timestamp}@example.com`, tier: 'STANDARD' })
+      body: JSON.stringify({ 
+        customerId: testCustomerId, 
+        firstName: 'Saga', 
+        lastName: 'Test', 
+        email: `test-${timestamp}@example.com`, 
+        password: 'password123',
+        tier: 'STANDARD' 
+      })
     });
     
     await fetch(`${API_URL}/catalog`, {

@@ -1,27 +1,37 @@
 import { db } from './db.js';
 import { Producer } from 'kafkajs';
-import { CustomerEvent, sendTraced } from 'shared-contracts';
+import { CustomerEvent, sendTraced, CreateCustomerCommandPayload } from 'shared-contracts';
+import bcrypt from 'bcryptjs';
 
 export class CustomerModel {
   constructor(private producer: Producer) {}
 
-  async createCustomer(customer: Omit<CustomerEvent, 'eventType' | 'tier'>) {
+  async createCustomer(payload: CreateCustomerCommandPayload) {
     // 1. Emit START event
     await this.emitEvent({
-      ...customer,
-      tier: 'STANDARD',
       eventType: 'CUSTOMER_CREATE_START',
+      customerId: payload.customerId,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      email: payload.email,
+      tier: 'STANDARD'
     });
+
+    let passwordHash = undefined;
+    if (payload.password) {
+      passwordHash = await bcrypt.hash(payload.password, 10);
+    }
 
     try {
       await db.transaction().execute(async (trx) => {
         // 2. Perform DB insert
         const newCustomer = await trx.insertInto('customer')
           .values({
-            customer_id: customer.customerId,
-            first_name: customer.firstName,
-            last_name: customer.lastName,
-            email: customer.email
+            customer_id: payload.customerId,
+            first_name: payload.firstName,
+            last_name: payload.lastName,
+            email: payload.email,
+            password_hash: passwordHash
           })
           .returning('id')
           .executeTakeFirstOrThrow();
@@ -34,7 +44,7 @@ export class CustomerModel {
           })
           .execute();
       });
-      console.log(`[CustomerModel] Inserted ${customer.firstName} into DB via Kysely`);
+      console.log(`[CustomerModel] Inserted ${payload.firstName} into DB via Kysely`);
     } catch (e) {
       console.error('Failed to create customer', e);
       throw e;
@@ -42,9 +52,13 @@ export class CustomerModel {
 
     // 3. Emit END event
     await this.emitEvent({
-      ...customer,
-      tier: 'STANDARD',
       eventType: 'CUSTOMER_CREATE_END',
+      customerId: payload.customerId,
+      firstName: payload.firstName,
+      lastName: payload.lastName,
+      email: payload.email,
+      tier: 'STANDARD',
+      passwordHash: passwordHash
     });
   }
 
@@ -66,10 +80,11 @@ export class CustomerModel {
           lastName: customerRow.last_name,
           email: customerRow.email,
           tier: newTier,
+          passwordHash: customerRow.password_hash ?? undefined
         };
 
         // 1. Emit START event
-        await this.emitEvent({ ...eventPayload, eventType: 'CUSTOMER_UPDATE_START' });
+        await this.emitEvent({ ...(eventPayload as any), eventType: 'CUSTOMER_UPDATE_START' });
 
         // 2. Perform DB update
         await trx.updateTable('customer_tier_index')
@@ -77,11 +92,11 @@ export class CustomerModel {
           .where('customer_id', '=', customerRow.id)
           .execute();
       });
-      console.log(`[CustomerModel] Upgraded ${eventPayload?.firstName} to ${newTier} via Kysely`);
+      console.log(`[CustomerModel] Upgraded ${(eventPayload as any)?.firstName} to ${newTier} via Kysely`);
       
       // 3. Emit END event
       if (eventPayload) {
-        await this.emitEvent({ ...eventPayload, eventType: 'CUSTOMER_UPDATE_END' });
+        await this.emitEvent({ ...(eventPayload as any), eventType: 'CUSTOMER_UPDATE_END' });
       }
     } catch (e) {
       console.error('Failed to upgrade tier', e);

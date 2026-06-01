@@ -14,6 +14,7 @@ export interface CustomerTable {
   first_name: string;
   last_name: string;
   email: string;
+  password_hash: string | null;
 }
 
 export interface CustomerTierIndexTable {
@@ -50,8 +51,13 @@ export async function initDb() {
         customer_id VARCHAR(50) UNIQUE NOT NULL,
         first_name VARCHAR(100) NOT NULL,
         last_name VARCHAR(100) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255)
       );
+    `);
+
+    await client.query(`
+      ALTER TABLE customer ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
     `);
 
     await client.query(`
