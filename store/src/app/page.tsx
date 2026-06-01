@@ -1,0 +1,68 @@
+import ProductCard from '@/components/ProductCard';
+import Link from 'next/link';
+
+async function getCatalog(page: number, limit: number) {
+  try {
+    const res = await fetch(`http://localhost:3000/api/catalog?page=${page}&limit=${limit}`, { 
+      cache: 'no-store' // Always fetch latest for this demo
+    });
+    if (!res.ok) throw new Error('Failed to fetch data');
+    return res.json();
+  } catch (error) {
+    console.error(error);
+    return { data: [], total: 0, page: 1, limit: 10, totalPages: 1 };
+  }
+}
+
+// Next.js 15 requires awaiting searchParams if accessed
+export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const params = await searchParams;
+  const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
+  const limit = 8; // Items per page
+  
+  const catalog = await getCatalog(page, limit);
+
+  return (
+    <div style={{ padding: '2rem 0' }}>
+      <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+        <h1 style={{ fontSize: '3.5rem', marginBottom: '1rem', background: 'linear-gradient(to right, var(--primary), var(--secondary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+          Discover the Extraordinary
+        </h1>
+        <p style={{ fontSize: '1.25rem', color: 'var(--text-secondary)', maxWidth: '600px', margin: '0 auto' }}>
+          Explore our premium catalog of carefully curated products designed just for you.
+        </p>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '2rem' }}>
+        {catalog.data.map((product: any) => (
+          <ProductCard key={product.productId} product={product} />
+        ))}
+      </div>
+
+      {catalog.data.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-secondary)' }}>
+          No products found.
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {catalog.totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '4rem' }}>
+          {page > 1 && (
+            <Link href={`/?page=${page - 1}`} className="btn btn-outline">
+              Previous
+            </Link>
+          )}
+          <span style={{ display: 'flex', alignItems: 'center', padding: '0 1rem', fontWeight: 600 }}>
+            Page {page} of {catalog.totalPages}
+          </span>
+          {page < catalog.totalPages && (
+            <Link href={`/?page=${page + 1}`} className="btn btn-outline">
+              Next
+            </Link>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
