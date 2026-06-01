@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { Producer } from 'kafkajs';
-import { CustomerEvent } from 'shared-contracts';
+import { CustomerEvent, sendTraced } from 'shared-contracts';
 
 export class CustomerModel {
   constructor(private producer: Producer) {}
@@ -112,20 +112,15 @@ export class CustomerModel {
       timestamp: new Date().toISOString()
     };
     
-    await this.producer.send({
-      topic: 'orders-topic',
-      messages: [{ key: orderEvent.orderId, value: JSON.stringify(sagaResponse) }]
-    });
+    await sendTraced(this.producer, 'orders-topic', [
+      { key: orderEvent.orderId, value: JSON.stringify(sagaResponse) }
+    ]);
   }
 
   private async emitEvent(event: CustomerEvent) {
-    await this.producer.send({
-      topic: 'customer-topic',
-      messages: [{
-        key: event.customerId,
-        value: JSON.stringify(event)
-      }]
-    });
+    await sendTraced(this.producer, 'customer-topic', [
+      { key: event.customerId, value: JSON.stringify(event) }
+    ]);
     console.log(`[Kafka] Emitted ${event.eventType} for ${event.customerId}`);
   }
 }

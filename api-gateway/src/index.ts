@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { Kafka, Partitioners } from 'kafkajs';
-import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, OrderCommand, CreateOrderCommandPayload } from 'shared-contracts';
+import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, OrderCommand, CreateOrderCommandPayload, sendTraced } from 'shared-contracts';
 import { open } from 'lmdb';
 import Redis from 'ioredis';
 
@@ -49,13 +49,10 @@ app.post('/api/customers', async (req, res) => {
       payload
     };
 
-    await producer.send({
-      topic: 'customer-commands-topic',
-      messages: [{
-        key: payload.customerId,
-        value: JSON.stringify(command)
-      }]
-    });
+    await sendTraced(producer, 'customer-commands-topic', [{
+      key: payload.customerId,
+      value: JSON.stringify(command)
+    }]);
 
     console.log(`[API Gateway] Published CREATE_CUSTOMER_COMMAND for ${payload.customerId}`);
     const responseData = { message: 'Customer creation accepted', customerId: payload.customerId };
@@ -89,13 +86,10 @@ app.post('/api/customers/:id/tier', async (req, res) => {
       payload
     };
 
-    await producer.send({
-      topic: 'customer-commands-topic',
-      messages: [{
-        key: customerId,
-        value: JSON.stringify(command)
-      }]
-    });
+    await sendTraced(producer, 'customer-commands-topic', [{
+      key: customerId,
+      value: JSON.stringify(command)
+    }]);
 
     console.log(`[API Gateway] Published UPGRADE_TIER_COMMAND for ${customerId}`);
     const responseData = { message: 'Tier upgrade accepted', customerId };
@@ -147,10 +141,9 @@ app.post('/api/catalog', async (req, res) => {
       payload
     };
 
-    await producer.send({
-      topic: 'catalog-commands-topic',
-      messages: [{ key: payload.productId, value: JSON.stringify(command) }]
-    });
+    await sendTraced(producer, 'catalog-commands-topic', [
+      { key: payload.productId, value: JSON.stringify(command) }
+    ]);
 
     console.log(`[API Gateway] Published CREATE_PRODUCT_START for ${payload.productId}`);
     const responseData = { message: 'Product creation accepted', productId: payload.productId };
@@ -184,10 +177,9 @@ app.post('/api/catalog/:id/price', async (req, res) => {
       payload
     };
 
-    await producer.send({
-      topic: 'catalog-commands-topic',
-      messages: [{ key: productId, value: JSON.stringify(command) }]
-    });
+    await sendTraced(producer, 'catalog-commands-topic', [
+      { key: productId, value: JSON.stringify(command) }
+    ]);
 
     console.log(`[API Gateway] Published UPDATE_PRICE_START for ${productId}`);
     const responseData = { message: 'Price update accepted', productId };
@@ -257,10 +249,9 @@ app.post('/api/orders', async (req, res) => {
       payload
     };
 
-    await producer.send({
-      topic: 'orders-commands-topic',
-      messages: [{ key: payload.orderId, value: JSON.stringify(command) }]
-    });
+    await sendTraced(producer, 'orders-commands-topic', [
+      { key: payload.orderId, value: JSON.stringify(command) }
+    ]);
 
     console.log(`[API Gateway] Published CREATE_ORDER_START for ${payload.orderId}`);
     const responseData = { message: 'Order creation accepted', orderId: payload.orderId };

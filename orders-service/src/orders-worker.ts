@@ -2,7 +2,7 @@ import { Kafka, Partitioners } from 'kafkajs';
 import { sql } from 'kysely';
 import { db } from './db.js';
 import { OrdersModel } from './orders-model.js';
-import { OrderCommand, CreateOrderCommandPayload, OrderEvent } from 'shared-contracts';
+import { OrderCommand, CreateOrderCommandPayload, OrderEvent, tracedEachMessage } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'orders-service-worker',
@@ -49,7 +49,7 @@ async function start() {
   console.log('🛒 [Orders Worker] Listening for commands and saga responses');
 
   await consumer.run({
-    eachMessage: async ({ topic, message }) => {
+    eachMessage: tracedEachMessage(async ({ topic, partition, message }) => {
       if (!message.value) return;
       
       try {
@@ -71,7 +71,7 @@ async function start() {
         console.error(`🛒 Failed to process message from ${topic}`, e);
         await logger.error(`Failed to process message from ${topic}`, e, { topic, messageKey: message.key?.toString() });
       }
-    }
+    }),
   });
 }
 

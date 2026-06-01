@@ -1,7 +1,7 @@
 import { Kafka, Consumer, Producer, Partitioners } from 'kafkajs';
 import { initDb } from './db.js';
 import { CustomerModel } from './customer-model.js';
-import { CustomerCommand } from 'shared-contracts';
+import { CustomerCommand, tracedEachMessage } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'customers-service-worker',
@@ -26,7 +26,7 @@ async function startWorker() {
   console.log('🎧 Listening for Commands on customer-commands-topic and orders-topic...');
 
   await consumer.run({
-    eachMessage: async ({ topic, partition, message }) => {
+    eachMessage: tracedEachMessage(async ({ topic, partition, message }) => {
       if (!message.value) return;
 
       if (topic === 'orders-topic') {
@@ -52,7 +52,7 @@ async function startWorker() {
       } catch (err) {
         console.error(`[Worker] Error processing command ${command.commandType}`, err);
       }
-    },
+    }),
   });
 }
 

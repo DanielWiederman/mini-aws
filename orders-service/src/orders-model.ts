@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { Producer } from 'kafkajs';
-import { OrderEvent, CreateOrderCommandPayload } from 'shared-contracts';
+import { OrderEvent, CreateOrderCommandPayload, sendTraced } from 'shared-contracts';
 
 export class OrdersModel {
   constructor(private producer: Producer) {}
@@ -100,9 +100,8 @@ export class OrdersModel {
   }
 
   private async emitEvent(event: OrderEvent) {
-    await this.producer.send({
-      topic: 'orders-topic',
-      messages: [{ key: event.orderId, value: JSON.stringify(event) }]
-    });
+    await sendTraced(this.producer, 'orders-topic', [
+      { key: event.orderId, value: JSON.stringify(event) }
+    ]);
   }
 }

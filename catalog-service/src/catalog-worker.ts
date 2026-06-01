@@ -1,7 +1,7 @@
 import { Kafka, Partitioners } from 'kafkajs';
 import { db } from './db.js';
 import { CatalogModel } from './catalog-model.js';
-import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload } from 'shared-contracts';
+import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, tracedEachMessage } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'catalog-service-worker',
@@ -35,7 +35,7 @@ async function start() {
   console.log('📦 [Catalog Worker] Listening for commands and saga orders');
 
   await consumer.run({
-    eachMessage: async ({ topic, message }) => {
+    eachMessage: tracedEachMessage(async ({ topic, message }) => {
       if (!message.value) return;
       
       if (topic === 'orders-topic') {
@@ -74,7 +74,7 @@ async function start() {
       } catch (e) {
         console.error(`📦 Failed to process command ${command.commandType}`, e);
       }
-    }
+    })
   });
 }
 
