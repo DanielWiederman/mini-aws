@@ -16,14 +16,18 @@ It mimics the following AWS primitives locally:
 | `customers-service` | Cognito / DynamoDB Streams (user profile events) |
 | `catalog-service` | DynamoDB Streams / EventBridge (product inventory events) |
 | `orders-service` | SQS / EventBridge (order checkout commands) |
-| `derived-view-service` | Lambda + DynamoDB (CQRS materialized view processor) |
+| `derived-view-service` | Lambda + Redis (CQRS materialized view processor) |
 | `shared-contracts` | AWS Schema Registry (shared event type contracts) |
+| `otel-collector` | AWS X-Ray (Distributed Tracing & Metrics) |
 
 ---
 
 ## Current Architecture
 
-The system is built around the **CQRS (Command Query Responsibility Segregation)** and **Event Sourcing** patterns. Three independent producer services stream domain events onto dedicated Kafka topics. A single consumer engine joins and materializes those streams into a queryable read model — with no REST calls between services.
+The system is built around the **Distributed Saga**, **CQRS (Command Query Responsibility Segregation)**, and **Event Sourcing** patterns. Three independent worker services process commands and stream domain events onto dedicated Kafka topics. A CQRS engine consumes these streams into a queryable read model (Redis) which is exposed via an **API Gateway**.
+
+### The Observability Stack (New!)
+The entire system is fully instrumented with **OpenTelemetry**. Traces, Spans, and Service Performance Metrics (SPM) flow through an OTel Collector into **Prometheus** and are visualized beautifully in **Jaeger v2**. Every HTTP request, Postgres query, and Kafka message (via custom manual context propagation) is tracked.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -221,11 +225,18 @@ pnpm dev
 This starts all four services in parallel in one terminal, each with a colored label:
 
 ```
-[customers] 👥 Customers Service Online...
-[catalog]   📦 Catalog Service Online...
-[orders]    🛒 Orders Write/Command Service Online...
+[customers] 👥 Customers Service Worker Online...
+[catalog]   📦 Catalog Service Worker Online...
+[orders]    🛒 Orders Service Worker Online...
 [view]      📊 CQRS Derived View Engine Online...
+[api-gateway] 🌐 API Gateway running on http://localhost:3000
 ```
+
+### 4. View Distributed Traces
+
+Open your browser to:
+- **Jaeger UI:** `http://localhost:16686`
+Search for `api-gateway` to see the full Distributed Saga waterfalls and auto-generated System Architecture graphs!
 
 Or run a single service in isolation:
 
@@ -260,20 +271,7 @@ docker-compose down
 
 ## Roadmap — Towards a Full Production System
 
-This project will grow beyond a mockup. The planned phases are:
-
-### Phase 2 — Persistence & Real CRUD
-- Replace in-memory KTables with a real database (PostgreSQL / Redis)
-- Persist the materialized view to a queryable store
-- Add proper event replay / offset management
-- Introduce **dead-letter topics** for failed message handling
-
-### Phase 3 — REST / GraphQL API Layer
-- Build an **API Gateway service** (Express / Fastify / NestJS) that:
-  - Exposes REST or GraphQL endpoints consumed by a frontend
-  - Reads from the materialized view (query side)
-  - Accepts commands (POST /orders, POST /customers) and publishes them to Kafka (write side)
-- Add authentication (JWT / OAuth2)
+This project will continue to grow. The planned phases are:
 
 ### Phase 4 — Frontend Integration
 - React / Next.js frontend connecting to the API Gateway
@@ -339,13 +337,15 @@ flowchart TD
 | Layer | Technology |
 |---|---|
 | Language | TypeScript (Node.js) |
+| API Gateway | Express |
 | Messaging | Apache Kafka (KafkaJS client) |
-| Infrastructure | Docker Compose (Confluent Kafka image) |
+| Database | PostgreSQL (Kysely) & Redis (ioredis) |
+| Tracing & Metrics | OpenTelemetry, Prometheus, Jaeger v2 |
+| Infrastructure | Docker Compose |
 | Monorepo | pnpm workspaces |
 | Dev runner | tsx (esbuild-based, no compile step) |
 | Production build | tsup (esbuild bundler) |
 | Multi-service dev | concurrently |
-| Future API | Express / Fastify / NestJS |
 | Future Frontend | React / Next.js |
 | Future Cloud | AWS MSK, ECS, API Gateway |
 
