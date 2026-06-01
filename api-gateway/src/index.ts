@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { Kafka } from 'kafkajs';
+import { Kafka, Partitioners } from 'kafkajs';
 import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, OrderCommand, CreateOrderCommandPayload } from 'shared-contracts';
 import { open } from 'lmdb';
 import Redis from 'ioredis';
@@ -18,7 +18,7 @@ const kafka = new Kafka({
   brokers: ['localhost:9092']
 });
 
-const producer = kafka.producer();
+const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
 
 const idempotencyMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   if (req.method !== 'POST') return next();

@@ -1,4 +1,4 @@
-import { Kafka } from 'kafkajs';
+import { Kafka, Partitioners } from 'kafkajs';
 import { sql } from 'kysely';
 import { db } from './db.js';
 import { OrdersModel } from './orders-model.js';
@@ -10,7 +10,7 @@ const kafka = new Kafka({
 });
 
 const consumer = kafka.consumer({ groupId: 'orders-service-group' });
-const producer = kafka.producer();
+const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
 const ordersModel = new OrdersModel(producer);
 
 async function initDB() {

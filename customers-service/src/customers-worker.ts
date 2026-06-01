@@ -1,4 +1,4 @@
-import { Kafka, Consumer, Producer } from 'kafkajs';
+import { Kafka, Consumer, Producer, Partitioners } from 'kafkajs';
 import { initDb } from './db.js';
 import { CustomerModel } from './customer-model.js';
 import { CustomerCommand } from 'shared-contracts';
@@ -8,7 +8,7 @@ const kafka = new Kafka({
   brokers: ['localhost:9092']
 });
 
-const producer: Producer = kafka.producer();
+const producer: Producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
 const consumer: Consumer = kafka.consumer({ groupId: 'customers-worker-group' });
 
 async function startWorker() {

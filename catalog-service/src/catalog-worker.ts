@@ -1,4 +1,4 @@
-import { Kafka } from 'kafkajs';
+import { Kafka, Partitioners } from 'kafkajs';
 import { db } from './db.js';
 import { CatalogModel } from './catalog-model.js';
 import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload } from 'shared-contracts';
@@ -9,7 +9,7 @@ const kafka = new Kafka({
 });
 
 const consumer = kafka.consumer({ groupId: 'catalog-service-group' });
-const producer = kafka.producer();
+const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
 const catalogModel = new CatalogModel(producer);
 
 async function initDB() {
