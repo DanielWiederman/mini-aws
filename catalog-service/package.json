@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/catalog-worker.ts",
+    "dev": "tsx --import ./src/tracing.ts src/catalog-worker.ts",
     "build": "tsup src/catalog-worker.ts --format esm",
     "typecheck": "tsc --noEmit"
   },

@@ -5,7 +5,9 @@ packages:
   - "orders-service"
   - "derived-view-service"
   - "api-gateway"
+  - "logs-service"
 allowBuilds:
   esbuild: true
   lmdb: set this to true or false
   msgpackr-extract: set this to true or false
+  protobufjs: set this to true or false

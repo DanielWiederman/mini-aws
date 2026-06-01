@@ -1,0 +1,65 @@
+{
+  "folders": {},
+  "connections": {
+    "catalog-db-conn": {
+      "provider": "postgresql",
+      "driver": "postgres-jdbc",
+      "name": "mini-aws: Catalog DB",
+      "save-password": true,
+      "configuration": {
+        "host": "localhost",
+        "port": "5433",
+        "database": "catalog_db",
+        "url": "jdbc:postgresql://localhost:5433/catalog_db",
+        "user": "user",
+        "password": "password",
+        "type": "dev"
+      }
+    },
+    "customers-db-conn": {
+      "provider": "postgresql",
+      "driver": "postgres-jdbc",
+      "name": "mini-aws: Customers DB",
+      "save-password": true,
+      "configuration": {
+        "host": "localhost",
+        "port": "5434",
+        "database": "customers_db",
+        "url": "jdbc:postgresql://localhost:5434/customers_db",
+        "user": "user",
+        "password": "password",
+        "type": "dev"
+      }
+    },
+    "orders-db-conn": {
+      "provider": "postgresql",
+      "driver": "postgres-jdbc",
+      "name": "mini-aws: Orders DB",
+      "save-password": true,
+      "configuration": {
+        "host": "localhost",
+        "port": "5435",
+        "database": "orders_db",
+        "url": "jdbc:postgresql://localhost:5435/orders_db",
+        "user": "postgres",
+        "password": "postgres",
+        "type": "dev"
+      }
+    },
+    "logs-db-conn": {
+      "provider": "postgresql",
+      "driver": "postgres-jdbc",
+      "name": "mini-aws: Logs DB",
+      "save-password": true,
+      "configuration": {
+        "host": "localhost",
+        "port": "5436",
+        "database": "logs_db",
+        "url": "jdbc:postgresql://localhost:5436/logs_db",
+        "user": "user",
+        "password": "password",
+        "type": "dev"
+      }
+    }
+  }
+}

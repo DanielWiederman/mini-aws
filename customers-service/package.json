@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/customers-worker.ts",
+    "dev": "tsx --import ./src/tracing.ts src/customers-worker.ts",
     "build": "tsup src/customers-worker.ts --format esm",
     "typecheck": "tsc --noEmit"
   },

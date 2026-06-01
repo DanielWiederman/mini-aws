@@ -25,6 +25,13 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.218.0",
+    "@opentelemetry/instrumentation-express": "^0.66.0",
+    "@opentelemetry/instrumentation-http": "^0.218.0",
+    "@opentelemetry/instrumentation-kafkajs": "^0.27.0",
+    "@opentelemetry/instrumentation-pg": "^0.70.0",
+    "@opentelemetry/sdk-node": "^0.218.0",
     "kafkajs": "^2.2.4"
   }
 }
