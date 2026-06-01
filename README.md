@@ -1,6 +1,6 @@
 # mini-aws — Event-Driven Architecture Mockup
 
-> A hands-on mockup project that replicates AWS-style distributed systems using **Apache Kafka**, **Node.js**, and **TypeScript** — entirely on your local machine.
+> A hands-on mockup project that replicates AWS-style distributed systems using **Apache Kafka**, **Node.js**, **TypeScript**, and **BullMQ** — entirely on your local machine.
 
 ---
 
@@ -13,11 +13,12 @@ It mimics the following AWS primitives locally:
 | Local Component | AWS Equivalent |
 |---|---|
 | Confluent Kafka (Docker) | Amazon MSK (Managed Streaming for Kafka) |
-| `customers-service` | Cognito / DynamoDB Streams (user profile events) |
+| `customers-service` | Cognito / DynamoDB Streams (user profile & RBAC events) |
 | `catalog-service` | DynamoDB Streams / EventBridge (product inventory events) |
+| `BullMQ` (backed by Redis) | Amazon SQS / EventBridge Scheduler (delayed price updates) |
 | `orders-service` | SQS / EventBridge (order checkout commands) |
 | `derived-view-service` | Lambda + Redis (CQRS materialized view processor) |
-| `assets-service` | Amazon S3 / MediaConvert (image uploads & resizing) |
+| `assets-service` | Amazon S3 / MediaConvert (image uploads & dynamic WebP processing) |
 | `shared-contracts` | AWS Schema Registry (shared event type contracts) |
 | `store` (Next.js) | Public Storefront Application |
 | `store-management` (Vite) | Internal Admin Dashboard |
@@ -29,7 +30,13 @@ It mimics the following AWS primitives locally:
 
 The system is built around the **Distributed Saga**, **CQRS (Command Query Responsibility Segregation)**, and **Event Sourcing** patterns. Three independent worker services process commands and stream domain events onto dedicated Kafka topics. A CQRS engine consumes these streams into a queryable read model (Redis) which is exposed via an **API Gateway**.
 
-### The Observability Stack (New!)
+### Key New Features
+* **Background Scheduling:** Price updates can be scheduled into the future using `BullMQ` and `Redis`. The `catalog-service` acts as a highly resilient background worker.
+* **Unified RBAC:** The `customers-service` handles all identity (both `CUSTOMER`, `ADMIN`, and `SUPER_ADMIN`), sharing the same pipeline for the Next.js Storefront and the Vite Store Management Dashboard.
+* **Idempotency:** The API Gateway ensures safe command retries by enforcing strict `Idempotency-Key` tracking backed by LMDB.
+* **Asset Pipeline:** An `assets-service` uses `multer` and `sharp` to process uploaded files directly into optimized WebP images and thumbnails.
+
+### The Observability Stack
 The entire system is fully instrumented with **OpenTelemetry**. Traces, Spans, and Service Performance Metrics (SPM) flow through an OTel Collector into **Prometheus** and are visualized beautifully in **Jaeger v2**. Every HTTP request, Postgres query, and Kafka message (via custom manual context propagation) is tracked.
 
 ```
@@ -78,49 +85,6 @@ The entire system is fully instrumented with **OpenTelemetry**. Traces, Spans, a
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Data Flow Diagram (Mermaid)
-
-```mermaid
-flowchart LR
-    subgraph Producers["Producers — Command Side"]
-        CS["customers-service\nCustomerEvent\n(id, name, email, tier)"]
-        CAT["catalog-service\nCatalogEvent\n(id, title, price, stock)"]
-        OS["orders-service\nOrderEvent\n(id, customerId, items[], status)"]
-    end
-
-    subgraph Kafka["Apache Kafka  (Docker — mocks AWS MSK)"]
-        CT[("customer-topic")]
-        KT[("catalog-topic")]
-        OT[("orders-topic")]
-    end
-
-    subgraph Consumer["derived-view-service — Query Side"]
-        ENG["CQRS Engine\n(cqrs-engine.ts)"]
-        CustTbl[["customerTable\n(local KTable)"]];
-        CatTbl[["catalogTable\n(local KTable)"]];
-        VIEW[["Materialized View\nReadModelOrderSummary"]]
-    end
-
-    SC["shared-contracts\n(TypeScript interfaces)"]
-
-    CS -->|publish| CT
-    CAT -->|publish| KT
-    OS -->|publish| OT
-
-    CT -->|subscribe| ENG
-    KT -->|subscribe| ENG
-    OT -->|subscribe| ENG
-
-    ENG --> CustTbl
-    ENG --> CatTbl
-    ENG -->|join + enrich + tier rules| VIEW
-
-    SC -. "type contracts" .- CS
-    SC -. "type contracts" .- CAT
-    SC -. "type contracts" .- OS
-    SC -. "type contracts" .- ENG
-```
-
 ---
 
 ## Project Structure
@@ -129,68 +93,23 @@ flowchart LR
 mini-aws/                        ← monorepo root
 ├── package.json                 # root scripts (dev, build, typecheck)
 ├── pnpm-workspace.yaml          # declares all workspace packages
-├── tsconfig.base.json           # shared TS compiler settings (extended by each service)
-├── docker-compose.yaml          # Kafka broker + topic init (mocks AWS MSK)
+├── tsconfig.base.json           # shared TS compiler settings
+├── docker-compose.yaml          # Kafka broker + topic init
 │
 ├── backend/                     # Backend microservices
-│   ├── api-gateway/             # Central REST API gateway handling auth & routing
-│   ├── assets-service/          # Image processing and upload microservice
-│   ├── catalog-service/         # streams product & price change events
-│   ├── customers-service/       # streams user profile & tier events
+│   ├── api-gateway/             # Central REST API gateway (Auth & Idempotency)
+│   ├── assets-service/          # Image processing and WebP conversion
+│   ├── catalog-service/         # Streams product & price events (BullMQ)
+│   ├── customers-service/       # Streams user profile & RBAC events
 │   ├── derived-view-service/    # CQRS consumer: joins streams → read model
 │   ├── logs-service/            # Centralized logging service
-│   ├── orders-service/          # streams checkout / order command events
-│   └── shared-contracts/        # single source of truth for event types
+│   ├── orders-service/          # Streams checkout / order commands
+│   └── shared-contracts/        # Shared event types & DTOs
 │
-├── store/                       # Next.js 16 storefront application
-│   └── src/app/
+├── store/                       # Next.js 16 storefront application (Port 3001)
 │
-└── store-management/            # React + Vite internal management dashboard
-    └── src/
+└── store-management/            # React + Vite internal dashboard (Port 5178)
 ```
-
----
-
-## Monorepo
-
-This repo is a **pnpm workspace** monorepo. All packages are managed from the root — there is no need to `cd` into individual service folders.
-
-### Workspace structure
-
-| File | Purpose |
-|---|---|
-| `pnpm-workspace.yaml` | Tells pnpm which folders are packages and links them together |
-| `tsconfig.base.json` | Shared TypeScript settings; each service extends this with `"extends": "../tsconfig.base.json"` |
-| `package.json` | Root-level scripts that orchestrate the whole repo |
-
-### Root scripts
-
-| Command | What it does |
-|---|---|
-| `pnpm dev` | Runs **all 4 services in parallel**, color-coded in one terminal (`concurrently`) |
-| `pnpm dev:customers` | Runs only `customers-service` |
-| `pnpm dev:catalog` | Runs only `catalog-service` |
-| `pnpm dev:orders` | Runs only `orders-service` |
-| `pnpm dev:view` | Runs only `derived-view-service` (the live CQRS dashboard) |
-| `pnpm dev:assets` | Runs only `assets-service` |
-| `pnpm dev:logs` | Runs only `logs-service` |
-| `pnpm build` | Builds all packages with `tsup` (ESM output to each `dist/`) |
-| `pnpm typecheck` | Runs `tsc --noEmit` across every package |
-
-### How `shared-contracts` is linked
-
-Each service declares `"shared-contracts": "workspace:*"` in its `dependencies`. pnpm symlinks the local package into each service's `node_modules` — no publishing to npm, no build step required in development. Imports resolve directly to the TypeScript source:
-
-```ts
-import { CustomerEvent } from 'shared-contracts';
-```
-
-### Adding a new package
-
-1. Create the folder at the repo root
-2. Add a `package.json` with a unique `name`
-3. Add it to `pnpm-workspace.yaml`
-4. Run `pnpm install` from the root — pnpm links everything automatically
 
 ---
 
@@ -199,64 +118,36 @@ import { CustomerEvent } from 'shared-contracts';
 ### Prerequisites
 
 - [Docker](https://www.docker.com/) + Docker Compose
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) 18+ (20+ Recommended)
 - [pnpm](https://pnpm.io/)
 
 ### 1. Install all dependencies
 
-Run once from the **repo root** — installs and links all workspace packages in one shot:
+Run once from the **repo root**:
 
 ```bash
 pnpm install
 ```
 
-> First install will prompt: `pnpm approve-builds` — select `esbuild` and confirm. This downloads esbuild's native binary needed by `tsup`.
-
-### 2. Start Kafka
+### 2. Start Infrastructure (Kafka & DBs)
 
 ```bash
 docker-compose up -d
 ```
 
-Starts a single-node Kafka broker (KRaft mode, no Zookeeper) and auto-creates the three topics.
-
-### 3. Run all services
+### 3. Run all services & frontends
 
 ```bash
 pnpm dev
 ```
 
-This starts all four services in parallel in one terminal, each with a colored label:
+This starts all backend microservices, the API Gateway (port 3000), the Next.js Storefront (port 3001), the Assets Service (port 3002), and the Vite Admin Dashboard (port 5178).
 
-```
-[customers] 👥 Customers Service Worker Online...
-[catalog]   📦 Catalog Service Worker Online...
-[orders]    🛒 Orders Service Worker Online...
-[view]      📊 CQRS Derived View Engine Online...
-[api-gateway] 🌐 API Gateway running on http://localhost:3000
-```
+### 4. View Frontends & Dashboards
 
-### 4. View Distributed Traces
-
-Open your browser to:
-- **Jaeger UI:** `http://localhost:16686`
-Search for `api-gateway` to see the full Distributed Saga waterfalls and auto-generated System Architecture graphs!
-
-Or run a single service in isolation:
-
-```bash
-pnpm dev:view
-```
-
-### 4. Stop
-
-```bash
-# Stop all services
-Ctrl+C
-
-# Stop Kafka
-docker-compose down
-```
+- **Store Management Dashboard:** `http://localhost:5178` (Login with seeded admin user)
+- **Public Storefront:** `http://localhost:3001`
+- **Jaeger UI (Tracing):** `http://localhost:16686`
 
 ---
 
@@ -267,72 +158,26 @@ docker-compose down
 | **Event Sourcing** | Each service publishes immutable domain events to a topic |
 | **CQRS** | Producers own the write side; `derived-view-service` owns the read side |
 | **Stream-Table Join** | `cqrs-engine.ts` maintains local KTables and joins on order arrival |
-| **Tier-based business rules** | PREMIUM customers receive a 10% discount applied at read time |
-| **Schema Contracts** | `shared-contracts` enforces a single source of truth for event shapes |
+| **Delayed Execution** | `catalog-service` uses BullMQ to schedule precise future events |
+| **RBAC / Unified Auth** | `customers-service` secures the API Gateway with JWT & LMDB caching |
+| **Idempotency** | Prevent duplicate POSTs using `Idempotency-Key` headers |
 | **No inter-service HTTP** | Services communicate exclusively through Kafka — zero coupling |
 
 ---
 
-## Roadmap — Towards a Full Production System
-
-This project will continue to grow. The planned phases are:
+## Roadmap
 
 ### Phase 4 — Frontend Integration (Completed)
-- React / Next.js frontend connecting to the API Gateway.
-- Live order dashboard, catalog browser, customer profile management.
-- Included an `assets-service` for handling image uploads dynamically.
+- Next.js storefront consuming the materialized Redis views via API Gateway.
+- Internal Vite dashboard with beautiful dark-mode glassmorphism.
+- Soft-deletes, schedule price changes, and product updates.
+- `assets-service` for handling image uploads dynamically (Multer + Sharp).
 
-### Phase 5 — Cloud-Ready
+### Phase 5 — Cloud-Ready (Up Next)
 - Replace Docker Kafka with **AWS MSK**
 - Deploy services as **AWS ECS / Lambda** functions
 - Use **AWS API Gateway** in front of the REST layer
 - Add **CloudWatch** observability and alerting
-
-```mermaid
-flowchart TD
-    FE["Frontend\n(React / Next.js)"]
-    GW["API Gateway Service\n(Express / Fastify)"]
-
-    subgraph Kafka["Apache Kafka / AWS MSK"]
-        CT[("customer-topic")]
-        KT[("catalog-topic")]
-        OT[("orders-topic")]
-    end
-
-    subgraph Services["Microservices"]
-        CS["customers-service"]
-        CAT["catalog-service"]
-        OS["orders-service"]
-        DVS["derived-view-service\n(CQRS Engine)"]
-    end
-
-    subgraph Storage["Persistence Layer  (Phase 2+)"]
-        PG[("PostgreSQL\n(Write DB)")]
-        RD[("Redis\n(Read Cache)")]
-        MV[("Materialized View\nStore")]
-    end
-
-    FE -->|REST / GraphQL| GW
-    GW -->|Commands| CT
-    GW -->|Commands| KT
-    GW -->|Commands| OT
-    GW -->|Queries| MV
-
-    CT --> CS
-    KT --> CAT
-    OT --> OS
-    CS --> PG
-    CAT --> PG
-    OS --> PG
-
-    CT --> DVS
-    KT --> DVS
-    OT --> DVS
-    DVS --> MV
-    DVS --> RD
-
-    FE <-->|WebSocket / SSE\nlive updates| GW
-```
 
 ---
 
@@ -343,15 +188,13 @@ flowchart TD
 | Language | TypeScript (Node.js) |
 | API Gateway | Express |
 | Messaging | Apache Kafka (KafkaJS client) |
+| Background Jobs | BullMQ |
 | Database | PostgreSQL (Kysely), Redis (ioredis), & LMDB (Idempotency Cache) |
+| File Processing | Multer & Sharp (WebP compression) |
 | Tracing & Metrics | OpenTelemetry, Prometheus, Jaeger v2 |
 | Infrastructure | Docker Compose |
 | Monorepo | pnpm workspaces |
-| Dev runner | tsx (esbuild-based, no compile step) |
-| Production build | tsup (esbuild bundler) |
-| Multi-service dev | concurrently |
-| Future Frontend | React / Next.js |
-| Future Cloud | AWS MSK, ECS, API Gateway |
+| Frontends | React, Next.js, Vite |
 
 ---
 

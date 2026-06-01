@@ -238,6 +238,7 @@ app.post('/api/catalog', async (req, res) => {
       title: payload.title,
       price: payload.price,
       stockCount: payload.stockCount,
+      description: payload.description,
       thumbnail: payload.thumbnail,
       image: payload.image
     };

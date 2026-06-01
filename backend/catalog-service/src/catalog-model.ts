@@ -91,12 +91,14 @@ export class CatalogModel {
         const newDesc = payload.description !== undefined ? payload.description : productRow.description;
         const newThumb = payload.thumbnail || productRow.thumbnail;
         const newImage = payload.image || productRow.image;
+        const newPrice = payload.price !== undefined ? parseFloat(payload.price) : productRow.price;
+        const newStock = payload.stockCount !== undefined ? parseInt(payload.stockCount, 10) : productRow.stock_count;
 
         eventPayload = {
           productId: payload.productId,
           title: newTitle,
-          price: productRow.price,
-          stockCount: productRow.stock_count,
+          price: newPrice,
+          stockCount: newStock,
           description: newDesc ?? undefined,
           thumbnail: newThumb,
           image: newImage,
@@ -106,7 +108,15 @@ export class CatalogModel {
         await this.emitEvent({ ...(eventPayload as any), eventType: 'UPDATE_PRODUCT_START' as any });
 
         await trx.updateTable('product')
-          .set({ title: newTitle, description: newDesc, thumbnail: newThumb, image: newImage, updated_at: new Date() as any })
+          .set({ 
+            title: newTitle, 
+            description: newDesc, 
+            thumbnail: newThumb, 
+            image: newImage, 
+            price: newPrice,
+            stock_count: newStock,
+            updated_at: new Date() as any 
+          })
           .where('product_id', '=', payload.productId)
           .execute();
       });

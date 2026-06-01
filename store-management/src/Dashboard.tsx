@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, Edit2, Trash2, Calendar, UserPlus, Package, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 
 export default function Dashboard() {
   const [products, setProducts] = useState<any[]>([]);
@@ -12,6 +14,7 @@ export default function Dashboard() {
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [schedulingPrice, setSchedulingPrice] = useState<any>(null);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [creatingProduct, setCreatingProduct] = useState<any>(null);
 
   useEffect(() => {
     fetchProducts();
@@ -46,12 +49,85 @@ export default function Dashboard() {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
         title: editingProduct.title,
-        description: editingProduct.description
+        description: editingProduct.description,
+        price: parseFloat(editingProduct.price),
+        stockCount: parseInt(editingProduct.stockCount, 10),
+        thumbnail: editingProduct.thumbnail,
+        image: editingProduct.image
       })
     });
     setEditingProduct(null);
     alert('Product update dispatched!');
     setTimeout(fetchProducts, 1000);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const res = await fetch('http://localhost:3002/api/assets/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEditingProduct({ ...editingProduct, image: data.image, thumbnail: data.thumbnail });
+      } else {
+        alert('Image upload failed: ' + data.error);
+      }
+    } catch (err) {
+      alert('Failed to connect to assets service');
+    }
+  };
+
+  const createProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = {
+      productId: creatingProduct.productId,
+      title: creatingProduct.title,
+      description: creatingProduct.description,
+      price: parseFloat(creatingProduct.price),
+      stockCount: parseInt(creatingProduct.stockCount, 10),
+      thumbnail: creatingProduct.thumbnail,
+      image: creatingProduct.image
+    };
+
+    const idempotencyKey = `create-${Date.now()}`;
+    await fetch(`http://localhost:3000/api/catalog`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(payload)
+    });
+    setCreatingProduct(null);
+    alert('Product creation dispatched!');
+    setTimeout(fetchProducts, 1000);
+  };
+
+  const handleCreateImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const res = await fetch('http://localhost:3002/api/assets/upload', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCreatingProduct({ ...creatingProduct, image: data.image, thumbnail: data.thumbnail });
+      } else {
+        alert('Image upload failed: ' + data.error);
+      }
+    } catch (err) {
+      alert('Failed to connect to assets service');
+    }
   };
 
   const schedulePrice = async (e: React.FormEvent) => {
@@ -61,7 +137,7 @@ export default function Dashboard() {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
         newPrice: parseFloat(schedulingPrice.newPrice),
-        triggerAt: schedulingPrice.triggerAt
+        triggerAt: schedulingPrice.triggerAt.toISOString()
       })
     });
     setSchedulingPrice(null);
@@ -111,6 +187,9 @@ export default function Dashboard() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
+          <button className="btn-primary" onClick={() => setCreatingProduct({ productId: `prod_${Date.now()}`, title: '', description: '', price: 0, stockCount: 0, image: '', thumbnail: '' })} style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--panel-border)' }}>
+            <Package size={18} /> Add Product
+          </button>
           {role === 'SUPER_ADMIN' && (
             <button className="btn-primary" onClick={() => setShowAdminModal(true)} style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--panel-border)' }}>
               <UserPlus size={18} /> Provision Admin
@@ -147,7 +226,7 @@ export default function Dashboard() {
                       width: '48px', height: '48px', borderRadius: '12px', overflow: 'hidden', 
                       border: '1px solid var(--panel-border)', background: 'rgba(0,0,0,0.5)'
                     }}>
-                      <img src={p.thumbnail} alt={p.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={p.thumbnail || 'http://localhost:3001/aws-mini-default.png'} alt={p.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.src = 'http://localhost:3001/aws-mini-default.png' }} />
                     </div>
                   </td>
                   <td>
@@ -176,7 +255,9 @@ export default function Dashboard() {
                   <td style={{ textAlign: 'right' }}>
                     <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                       <button className="action-btn edit" title="Edit Product Details" onClick={() => setEditingProduct(p)}><Edit2 size={18} /></button>
-                      <button className="action-btn schedule" title="Schedule Price Change" onClick={() => setSchedulingPrice({ ...p, newPrice: p.price, triggerAt: '' })}><Calendar size={18} /></button>
+                      <button className="action-btn schedule" title="Schedule Price Change" onClick={() => {
+                        setSchedulingPrice({ ...p, newPrice: p.price, triggerAt: new Date() });
+                      }}><Calendar size={18} /></button>
                       <button className="action-btn delete" title="Remove Product" onClick={() => deleteProduct(p.productId)}><Trash2 size={18} /></button>
                     </div>
                   </td>
@@ -194,6 +275,85 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Create Product Modal */}
+      {creatingProduct && (
+        <div className="modal-overlay">
+          <div className="modal-content glass-panel" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+              <Package size={24} color="var(--primary)" />
+              <h2>Create New Product</h2>
+            </div>
+            <form onSubmit={createProduct}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Product ID</label>
+                <input className="input-field" value={creatingProduct.productId} onChange={e => setCreatingProduct({...creatingProduct, productId: e.target.value})} placeholder="e.g. prod_xyz" required />
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Product Title</label>
+                <input className="input-field" value={creatingProduct.title} onChange={e => setCreatingProduct({...creatingProduct, title: e.target.value})} placeholder="Title" required />
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Product Description</label>
+                <textarea className="input-field" value={creatingProduct.description} onChange={e => setCreatingProduct({...creatingProduct, description: e.target.value})} placeholder="Detailed description..." rows={3} />
+              </div>
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Price ($)</label>
+                  <input type="number" step="0.01" className="input-field" value={creatingProduct.price} onChange={e => setCreatingProduct({...creatingProduct, price: e.target.value})} placeholder="Price" required />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Initial Stock</label>
+                  <input type="number" className="input-field" value={creatingProduct.stockCount} onChange={e => setCreatingProduct({...creatingProduct, stockCount: e.target.value})} placeholder="Stock" required />
+                </div>
+              </div>
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Product Image</label>
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '80px', height: '80px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--panel-border)', flexShrink: 0 }}>
+                    <img 
+                      src={creatingProduct.image || creatingProduct.thumbnail || 'http://localhost:3001/aws-mini-default.png'} 
+                      alt="Preview" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      onError={(e) => { e.currentTarget.src = 'http://localhost:3001/aws-mini-default.png' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input 
+                        type="url" 
+                        className="input-field" 
+                        style={{ marginBottom: 0 }}
+                        value={creatingProduct.image || ''} 
+                        onChange={e => setCreatingProduct({...creatingProduct, image: e.target.value})} 
+                        placeholder="Or paste image URL..." 
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <label style={{ 
+                        background: 'rgba(255,255,255,0.05)', 
+                        padding: '8px 16px', 
+                        borderRadius: '8px', 
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        border: '1px solid var(--panel-border)',
+                        color: 'var(--text-main)'
+                      }}>
+                        Upload File
+                        <input type="file" accept="image/*" onChange={handleCreateImageUpload} style={{ display: 'none' }} />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <button type="button" className="btn-danger" style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: 'white', borderColor: 'transparent' }} onClick={() => setCreatingProduct(null)}>Cancel</button>
+                <button type="submit" className="btn-primary" style={{ flex: 1 }}>Create Product</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Edit Product Modal */}
       {editingProduct && (
         <div className="modal-overlay">
@@ -210,6 +370,56 @@ export default function Dashboard() {
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Product Description</label>
                 <textarea className="input-field" value={editingProduct.description || ''} onChange={e => setEditingProduct({...editingProduct, description: e.target.value})} placeholder="Detailed description..." rows={4} />
+              </div>
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Price ($)</label>
+                  <input type="number" step="0.01" className="input-field" value={editingProduct.price} onChange={e => setEditingProduct({...editingProduct, price: e.target.value})} placeholder="Price" required />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Stock Count</label>
+                  <input type="number" className="input-field" value={editingProduct.stockCount} onChange={e => setEditingProduct({...editingProduct, stockCount: e.target.value})} placeholder="Stock" required />
+                </div>
+              </div>
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Product Image</label>
+                
+                <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+                  <div style={{ width: '80px', height: '80px', borderRadius: '12px', overflow: 'hidden', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--panel-border)', flexShrink: 0 }}>
+                    <img 
+                      src={editingProduct.image || editingProduct.thumbnail || 'http://localhost:3001/aws-mini-default.png'} 
+                      alt="Preview" 
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      onError={(e) => { e.currentTarget.src = 'http://localhost:3001/aws-mini-default.png' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input 
+                        type="url" 
+                        className="input-field" 
+                        style={{ marginBottom: 0 }}
+                        value={editingProduct.image || ''} 
+                        onChange={e => setEditingProduct({...editingProduct, image: e.target.value})} 
+                        placeholder="Or paste image URL..." 
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <label style={{ 
+                        background: 'rgba(255,255,255,0.05)', 
+                        padding: '8px 16px', 
+                        borderRadius: '8px', 
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        border: '1px solid var(--panel-border)',
+                        color: 'var(--text-main)'
+                      }}>
+                        Upload File
+                        <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '16px' }}>
                 <button type="button" className="btn-danger" style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: 'white', borderColor: 'transparent' }} onClick={() => setEditingProduct(null)}>Cancel</button>
@@ -238,7 +448,22 @@ export default function Dashboard() {
               </div>
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Effective Date & Time</label>
-                <input type="datetime-local" className="input-field" value={schedulingPrice.triggerAt} onChange={e => setSchedulingPrice({...schedulingPrice, triggerAt: e.target.value})} required />
+                <div style={{ width: '100%' }}>
+                  <DatePicker
+                    selected={schedulingPrice.triggerAt}
+                    onChange={(date: Date | null) => {
+                      if (date) setSchedulingPrice({ ...schedulingPrice, triggerAt: date });
+                    }}
+                    showTimeSelect
+                    timeFormat="HH:mm"
+                    timeIntervals={15}
+                    timeCaption="Time"
+                    dateFormat="MMMM d, yyyy h:mm aa"
+                    className="input-field"
+                    wrapperClassName="date-picker-wrapper"
+                    required
+                  />
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '16px' }}>
                 <button type="button" className="btn-danger" style={{ flex: 1, background: 'rgba(255,255,255,0.05)', color: 'white', borderColor: 'transparent' }} onClick={() => setSchedulingPrice(null)}>Cancel</button>
