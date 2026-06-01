@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { TestContext } from 'node:test';
 import assert from 'node:assert';
 
 const API_URL = 'http://localhost:3000/api';
@@ -6,7 +6,7 @@ const API_URL = 'http://localhost:3000/api';
 // Helper to wait for Kafka processing
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-test('Customers Service E2E Lifecycle (CQRS & Event Sourcing)', async (t) => {
+test('Customers Service E2E Lifecycle (CQRS & Event Sourcing)', async (t: TestContext) => {
   const testCustomerId = `test_cust_${Date.now()}`;
   const testEmail = `alice_${Date.now()}@example.com`;
 

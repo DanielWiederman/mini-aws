@@ -1,10 +1,10 @@
-import test from 'node:test';
+import test, { TestContext } from 'node:test';
 import assert from 'node:assert';
 
 const API_URL = 'http://localhost:3000/api';
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-test('Orders Service Distributed Saga E2E Lifecycle', async (t) => {
+test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => {
   const timestamp = Date.now();
   const testCustomerId = `test_cust_order_${timestamp}`;
   const testProductId = `test_prod_order_${timestamp}`;
