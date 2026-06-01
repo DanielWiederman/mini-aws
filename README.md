@@ -44,6 +44,7 @@ graph TD
 * **Event-Driven Architecture:** Microservices communicate entirely asynchronously via Apache Kafka. Business logic is executed through decoupled commands and events (Sagas).
 * **CQRS Pattern:** Write operations (Commands) are handled by individual microservices, while Read operations (Queries) are served from a single, pre-aggregated materialized view in Redis.
 * **Real-Time Data Syncing:** A dedicated WebSocket microservice subscribes to a Redis Pub/Sub channel. Whenever the CQRS engine updates a materialized view, the update is instantly pushed to the Next.js and React frontends without HTTP polling.
+* **Distributed Tracing:** Fully instrumented with OpenTelemetry and Jaeger. Every API request and asynchronous Kafka message is traced across the entire microservice ecosystem, providing deep observability into saga executions and latency.
 * **High-Performance Local State:** Microservices utilize LMDB for ultra-fast, zero-copy local state processing before emitting final events.
 * **Stateless API Gateway:** The API Gateway holds zero state and maintains no persistent socket connections, allowing it to be elastically scaled behind an Application Load Balancer (e.g., AWS ECS/Fargate).
 
@@ -51,6 +52,7 @@ graph TD
 
 * **Frontend:** Next.js (App Router, Server Components), React (Vite)
 * **Backend:** Node.js, Express, TypeScript
+* **Observability & Tracing:** OpenTelemetry, Jaeger
 * **Messaging & Pub/Sub:** Apache Kafka, Redis Pub/Sub
 * **Databases:** Redis (Materialized Views), PostgreSQL (Customer Data), LMDB (Ultra-fast Local State)
 * **Real-Time:** Socket.io
