@@ -14,7 +14,8 @@ export class CustomerModel {
       firstName: payload.firstName,
       lastName: payload.lastName,
       email: payload.email,
-      tier: 'STANDARD'
+      tier: 'STANDARD',
+      role: payload.role || 'CUSTOMER'
     });
 
     let passwordHash = undefined;
@@ -31,7 +32,8 @@ export class CustomerModel {
             first_name: payload.firstName,
             last_name: payload.lastName,
             email: payload.email,
-            password_hash: passwordHash
+            password_hash: passwordHash,
+            role: payload.role || 'CUSTOMER'
           })
           .returning('id')
           .executeTakeFirstOrThrow();
@@ -58,7 +60,8 @@ export class CustomerModel {
       lastName: payload.lastName,
       email: payload.email,
       tier: 'STANDARD',
-      passwordHash: passwordHash
+      passwordHash: passwordHash,
+      role: payload.role || 'CUSTOMER'
     });
   }
 
@@ -80,7 +83,8 @@ export class CustomerModel {
           lastName: customerRow.last_name,
           email: customerRow.email,
           tier: newTier,
-          passwordHash: customerRow.password_hash ?? undefined
+          passwordHash: customerRow.password_hash ?? undefined,
+          role: customerRow.role
         };
 
         // 1. Emit START event

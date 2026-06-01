@@ -14,6 +14,7 @@ export interface CreateCustomerCommandPayload {
   lastName: string;
   email: string;
   password?: string;
+  role?: 'CUSTOMER' | 'ADMIN' | 'SUPER_ADMIN';
 }
 
 export interface UpgradeTierCommandPayload {
@@ -32,10 +33,16 @@ export interface CustomerEvent {
   email: string;
   tier: 'STANDARD' | 'PREMIUM'; // Affects order calculations
   passwordHash?: string;
+  role?: 'CUSTOMER' | 'ADMIN' | 'SUPER_ADMIN';
 }
 
 // 2. Catalog/Product Event (Streamed when inventory changes or prices update)
-export type CatalogCommandType = 'CREATE_PRODUCT_START' | 'UPDATE_PRICE_START';
+export type CatalogCommandType = 
+  | 'CREATE_PRODUCT_START' 
+  | 'UPDATE_PRICE_START' 
+  | 'UPDATE_PRODUCT_START' 
+  | 'DELETE_PRODUCT_START' 
+  | 'SCHEDULE_PRICE_UPDATE_COMMAND';
 
 export interface CatalogCommand {
   commandType: CatalogCommandType;
@@ -47,6 +54,7 @@ export interface CreateProductCommandPayload {
   title: string;
   price: number;
   stockCount: number;
+  description?: string;
   thumbnail?: string;
   image?: string;
 }
@@ -54,6 +62,24 @@ export interface CreateProductCommandPayload {
 export interface UpdatePriceCommandPayload {
   productId: string;
   newPrice: number;
+}
+
+export interface UpdateProductCommandPayload {
+  productId: string;
+  title?: string;
+  description?: string;
+  thumbnail?: string;
+  image?: string;
+}
+
+export interface DeleteProductCommandPayload {
+  productId: string;
+}
+
+export interface SchedulePriceUpdateCommandPayload {
+  productId: string;
+  newPrice: number;
+  triggerAt: string; // ISO timestamp
 }
 
 export type CatalogEventType = 'CATALOG_CREATE_END' | 'CATALOG_UPDATE_END';
@@ -64,8 +90,10 @@ export interface CatalogEvent {
   title: string;
   price: number;
   stockCount: number;
+  description?: string;
   thumbnail?: string;
   image?: string;
+  isDeleted?: boolean;
 }
 
 // 3. Order Event (Streamed when a checkout happens)

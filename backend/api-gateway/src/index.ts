@@ -95,9 +95,9 @@ app.post('/api/customers/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ customerId: authData.customerId }, 'secret_key', { expiresIn: '1h' });
+    const token = jwt.sign({ customerId: authData.customerId, role: authData.role || 'CUSTOMER' }, 'secret_key', { expiresIn: '1h' });
     res.cookie('jwt', token, { httpOnly: true, maxAge: 3600000 });
-    res.json({ token, customerId: authData.customerId });
+    res.json({ token, customerId: authData.customerId, role: authData.role || 'CUSTOMER' });
 
   } catch (err) {
     console.error(err);
@@ -143,6 +143,59 @@ app.post('/api/customers/:id/tier', async (req, res) => {
     res.status(202).json(responseData);
   } catch (err) {
     console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- RBAC MIDDLEWARES ---
+const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const decoded = jwt.verify(token, 'secret_key') as any;
+    if (decoded.role !== 'ADMIN' && decoded.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    (req as any).user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+const requireSuperAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const decoded = jwt.verify(token, 'secret_key') as any;
+    if (decoded.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: SUPER_ADMIN required' });
+    }
+    (req as any).user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+// --- CUSTOMERS COMMAND SIDE ---
+app.post('/api/admins', requireSuperAdmin, async (req, res) => {
+  try {
+    const payload: CreateCustomerCommandPayload = req.body;
+    if (!payload.customerId || !payload.firstName || !payload.lastName || !payload.email || !payload.password) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    payload.role = 'ADMIN';
+
+    const command: CustomerCommand = { commandType: 'CREATE_CUSTOMER_COMMAND', payload };
+    await sendTraced(producer, 'customer-commands-topic', [{ key: payload.customerId, value: JSON.stringify(command) }]);
+
+    const responseData = { message: 'Admin creation accepted', customerId: payload.customerId };
+    const idempotencyKey = req.header('Idempotency-Key') as string;
+    await idempotencyDb.put(idempotencyKey, responseData);
+    
+    res.status(202).json(responseData);
+  } catch (err) {
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -247,7 +300,66 @@ app.post('/api/catalog/:id/price', async (req, res) => {
   }
 });
 
+app.put('/api/catalog/:id', requireAdmin, async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const payload = req.body;
+    payload.productId = productId;
+    
+    const command: CatalogCommand = { commandType: 'UPDATE_PRODUCT_START', payload };
+    await sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]);
 
+    const responseData = { message: 'Product update accepted', productId };
+    const idempotencyKey = req.header('Idempotency-Key') as string;
+    await idempotencyDb.put(idempotencyKey, responseData);
+    
+    res.status(202).json(responseData);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.delete('/api/catalog/:id', requireAdmin, async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const command: CatalogCommand = { commandType: 'DELETE_PRODUCT_START', payload: { productId } as any };
+    await sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]);
+
+    const responseData = { message: 'Product deletion accepted', productId };
+    const idempotencyKey = req.header('Idempotency-Key') as string;
+    await idempotencyDb.put(idempotencyKey, responseData);
+    
+    res.status(202).json(responseData);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/api/catalog/:id/price-schedule', requireAdmin, async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { newPrice, triggerAt } = req.body;
+    
+    if (typeof newPrice !== 'number' || !triggerAt) {
+      return res.status(400).json({ error: 'Invalid price or triggerAt' });
+    }
+
+    const command: CatalogCommand = { 
+      commandType: 'SCHEDULE_PRICE_UPDATE_COMMAND', 
+      payload: { productId, newPrice, triggerAt } as any 
+    };
+    
+    await sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]);
+
+    const responseData = { message: 'Price schedule accepted', productId };
+    const idempotencyKey = req.header('Idempotency-Key') as string;
+    await idempotencyDb.put(idempotencyKey, responseData);
+    
+    res.status(202).json(responseData);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 app.get('/api/customers/me', async (req, res) => {
   try {
     const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
@@ -289,7 +401,9 @@ app.get('/api/catalog', async (req, res) => {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const allProducts = await redis.hgetall('catalog_view');
-    const results = Object.values(allProducts).map(v => JSON.parse(v));
+    const results = Object.values(allProducts)
+      .map(v => JSON.parse(v))
+      .filter(p => !p.isDeleted); // Exclude soft-deleted products
     
     // Sort by productId for deterministic pagination
     results.sort((a, b) => a.productId.localeCompare(b.productId));

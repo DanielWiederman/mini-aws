@@ -10,6 +10,7 @@ export interface OrderTable {
   stock_status: 'PENDING' | 'RESERVED' | 'DENIED';
   customer_status: 'PENDING' | 'VALID' | 'INVALID';
   created_at: import('kysely').Generated<Date>;
+  updated_at: import('kysely').Generated<Date>;
 }
 
 export interface OrderItemTable {

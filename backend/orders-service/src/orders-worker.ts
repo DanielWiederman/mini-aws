@@ -24,6 +24,7 @@ async function initDB() {
     .addColumn('stock_status', 'varchar', (col) => col.notNull())
     .addColumn('customer_status', 'varchar', (col) => col.notNull())
     .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
     .execute();
     
   await db.schema

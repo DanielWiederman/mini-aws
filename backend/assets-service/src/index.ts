@@ -25,7 +25,7 @@ app.use('/uploads', express.static(uploadsDir));
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 
-app.post('/api/assets/upload', upload.single('image'), async (req, res) => {
+app.post('/api/assets/upload', upload.single('image') as unknown as express.RequestHandler, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No image uploaded' });

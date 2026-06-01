@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { Producer } from 'kafkajs';
 import { CatalogEvent, sendTraced } from 'shared-contracts';
+import { priceUpdateQueue } from './scheduler.js';
 
 export class CatalogModel {
   constructor(private producer: Producer) {}
@@ -18,6 +19,7 @@ export class CatalogModel {
             title: product.title,
             price: product.price,
             stock_count: product.stockCount,
+            description: product.description || null,
             thumbnail: product.thumbnail || '',
             image: product.image || ''
           })
@@ -50,8 +52,10 @@ export class CatalogModel {
           title: productRow.title,
           price: newPrice,
           stockCount: productRow.stock_count,
+          description: productRow.description ?? undefined,
           thumbnail: productRow.thumbnail,
-          image: productRow.image
+          image: productRow.image,
+          isDeleted: !!productRow.deleted_at
         };
 
         // 1. Emit START event
@@ -72,6 +76,102 @@ export class CatalogModel {
       }
     } catch (e) {
       console.error('Failed to update price', e);
+      throw e;
+    }
+  }
+
+  async updateProduct(payload: any) {
+    let eventPayload: CatalogEvent | null = null;
+    try {
+      await db.transaction().execute(async (trx) => {
+        const productRow = await trx.selectFrom('product').selectAll().where('product_id', '=', payload.productId).executeTakeFirst();
+        if (!productRow) throw new Error('Product not found');
+
+        const newTitle = payload.title || productRow.title;
+        const newDesc = payload.description !== undefined ? payload.description : productRow.description;
+        const newThumb = payload.thumbnail || productRow.thumbnail;
+        const newImage = payload.image || productRow.image;
+
+        eventPayload = {
+          productId: payload.productId,
+          title: newTitle,
+          price: productRow.price,
+          stockCount: productRow.stock_count,
+          description: newDesc ?? undefined,
+          thumbnail: newThumb,
+          image: newImage,
+          isDeleted: !!productRow.deleted_at
+        };
+
+        await this.emitEvent({ ...(eventPayload as any), eventType: 'UPDATE_PRODUCT_START' as any });
+
+        await trx.updateTable('product')
+          .set({ title: newTitle, description: newDesc, thumbnail: newThumb, image: newImage, updated_at: new Date() as any })
+          .where('product_id', '=', payload.productId)
+          .execute();
+      });
+      console.log(`[CatalogModel] Updated product ${payload.productId}`);
+      if (eventPayload) await this.emitEvent({ ...(eventPayload as any), eventType: 'CATALOG_UPDATE_END' });
+    } catch (e) {
+      console.error('Failed to update product', e);
+      throw e;
+    }
+  }
+
+  async deleteProduct(productId: string) {
+    let eventPayload: CatalogEvent | null = null;
+    try {
+      await db.transaction().execute(async (trx) => {
+        const productRow = await trx.selectFrom('product').selectAll().where('product_id', '=', productId).executeTakeFirst();
+        if (!productRow) throw new Error('Product not found');
+
+        eventPayload = {
+          productId,
+          title: productRow.title,
+          price: productRow.price,
+          stockCount: productRow.stock_count,
+          description: productRow.description ?? undefined,
+          thumbnail: productRow.thumbnail,
+          image: productRow.image,
+          isDeleted: true
+        };
+
+        await this.emitEvent({ ...(eventPayload as any), eventType: 'DELETE_PRODUCT_START' as any });
+
+        await trx.updateTable('product')
+          .set({ deleted_at: new Date() as any })
+          .where('product_id', '=', productId)
+          .execute();
+      });
+      console.log(`[CatalogModel] Soft deleted product ${productId}`);
+      if (eventPayload) await this.emitEvent({ ...(eventPayload as any), eventType: 'CATALOG_UPDATE_END' });
+    } catch (e) {
+      console.error('Failed to delete product', e);
+      throw e;
+    }
+  }
+
+  async schedulePriceUpdate(payload: any) {
+    try {
+      const res = await db.insertInto('scheduled_price_update')
+        .values({
+          product_id: payload.productId,
+          new_price: payload.newPrice,
+          trigger_at: payload.triggerAt
+        })
+        .returning('id')
+        .executeTakeFirstOrThrow();
+        
+      const delay = new Date(payload.triggerAt).getTime() - Date.now();
+      await priceUpdateQueue.add('updatePrice', {
+        dbRowId: res.id,
+        productId: payload.productId,
+        newPrice: payload.newPrice
+      }, { delay: Math.max(0, delay) });
+
+      console.log(`[CatalogModel] Scheduled price update for ${payload.productId} at ${payload.triggerAt}`);
+    } catch (e) {
+      console.error('Failed to schedule price update', e);
       throw e;
     }
   }

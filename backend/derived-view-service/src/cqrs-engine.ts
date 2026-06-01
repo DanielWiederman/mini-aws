@@ -59,7 +59,8 @@ async function startCqrsEngine() {
           firstName: customer.firstName,
           lastName: customer.lastName,
           email: customer.email,
-          tier: customer.tier
+          tier: customer.tier,
+          role: customer.role || 'CUSTOMER'
         };
         await redis.hset('customers_view', customer.customerId, JSON.stringify(publicProfile));
 
@@ -67,7 +68,8 @@ async function startCqrsEngine() {
         if (customer.passwordHash) {
           await redis.hset('auth_view', customer.email, JSON.stringify({
             customerId: customer.customerId,
-            passwordHash: customer.passwordHash
+            passwordHash: customer.passwordHash,
+            role: customer.role || 'CUSTOMER'
           }));
         }
         
@@ -82,7 +84,13 @@ async function startCqrsEngine() {
         await catalogTable.put(catalog.productId, catalog);
         
         // Phase 2: Sync Materialized View to Redis
-        await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+        if (catalog.isDeleted) {
+          await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+          updateDashboard(`Catalog product deleted: ${catalog.title}`);
+        } else {
+          await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+          updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
+        }
 
         updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
       }

@@ -2,6 +2,8 @@ import { Kafka, Partitioners } from 'kafkajs';
 import { db } from './db.js';
 import { CatalogModel } from './catalog-model.js';
 import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, tracedEachMessage } from 'shared-contracts';
+import { sql } from 'kysely';
+import { initScheduler, priceUpdateQueue } from './scheduler.js';
 
 const kafka = new Kafka({
   clientId: 'catalog-service-worker',
@@ -32,7 +34,45 @@ async function initDB() {
     await db.schema.alterTable('product').addColumn('image', 'varchar', (col) => col.notNull().defaultTo('')).execute();
   } catch (e) { /* ignore if exists */ }
 
-  console.log('📦 [Catalog DB] Initialized product table');
+  try {
+    await db.schema.alterTable('product').addColumn('description', 'varchar').execute();
+  } catch (e) { /* ignore if exists */ }
+  
+  try {
+    await db.schema.alterTable('product').addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull()).execute();
+  } catch (e) { /* ignore if exists */ }
+
+  try {
+    await db.schema.alterTable('product').addColumn('updated_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull()).execute();
+  } catch (e) { /* ignore if exists */ }
+
+  try {
+    await db.schema.alterTable('product').addColumn('deleted_at', 'timestamp').execute();
+  } catch (e) { /* ignore if exists */ }
+
+  await db.schema
+    .createTable('scheduled_price_update')
+    .ifNotExists()
+    .addColumn('id', 'serial', (col) => col.primaryKey())
+    .addColumn('product_id', 'varchar', (col) => col.notNull())
+    .addColumn('new_price', 'numeric', (col) => col.notNull())
+    .addColumn('trigger_at', 'timestamp', (col) => col.notNull())
+    .execute();
+
+  console.log('📦 [Catalog DB] Initialized product & schedule tables');
+}
+
+async function syncScheduledUpdates() {
+  const pendingSchedules = await db.selectFrom('scheduled_price_update').selectAll().execute();
+  for (const schedule of pendingSchedules) {
+    const delay = new Date(schedule.trigger_at).getTime() - Date.now();
+    await priceUpdateQueue.add('updatePrice', {
+      dbRowId: schedule.id,
+      productId: schedule.product_id,
+      newPrice: schedule.new_price
+    }, { delay: Math.max(0, delay), jobId: `price_update_${schedule.id}` });
+  }
+  console.log(`📦 [Catalog Worker] Synced ${pendingSchedules.length} scheduled price updates to BullMQ.`);
 }
 
 async function start() {
@@ -80,6 +120,18 @@ async function start() {
             await catalogModel.updatePrice(payload.productId, payload.newPrice);
             break;
           }
+          case 'UPDATE_PRODUCT_START': {
+            await catalogModel.updateProduct(command.payload);
+            break;
+          }
+          case 'DELETE_PRODUCT_START': {
+            await catalogModel.deleteProduct((command.payload as any).productId);
+            break;
+          }
+          case 'SCHEDULE_PRICE_UPDATE_COMMAND': {
+            await catalogModel.schedulePriceUpdate(command.payload);
+            break;
+          }
           default:
             console.warn(`📦 Unknown command type: ${command.commandType}`);
         }
@@ -88,6 +140,9 @@ async function start() {
       }
     })
   });
+
+  initScheduler(catalogModel);
+  await syncScheduledUpdates();
 }
 
 start().catch(console.error);

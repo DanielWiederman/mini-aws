@@ -15,6 +15,9 @@ export interface CustomerTable {
   last_name: string;
   email: string;
   password_hash: string | null;
+  role: 'CUSTOMER' | 'ADMIN' | 'SUPER_ADMIN';
+  created_at: import('kysely').Generated<Date>;
+  updated_at: import('kysely').Generated<Date>;
 }
 
 export interface CustomerTierIndexTable {
@@ -52,12 +55,27 @@ export async function initDb() {
         first_name VARCHAR(100) NOT NULL,
         last_name VARCHAR(100) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255)
+        password_hash VARCHAR(255),
+        role VARCHAR(20) DEFAULT 'CUSTOMER',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
     await client.query(`
       ALTER TABLE customer ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+    `);
+    
+    await client.query(`
+      ALTER TABLE customer ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'CUSTOMER';
+    `);
+    
+    await client.query(`
+      ALTER TABLE customer ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    `);
+    
+    await client.query(`
+      ALTER TABLE customer ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
     `);
 
     await client.query(`
