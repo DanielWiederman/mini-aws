@@ -26,8 +26,8 @@ export default function Dashboard() {
   
   // Orders Search & Filter States
   const [orderSearchQuery, setOrderSearchQuery] = useState('');
-  const [orderStartDate, setOrderStartDate] = useState('');
-  const [orderEndDate, setOrderEndDate] = useState('');
+  const [orderStartDate, setOrderStartDate] = useState<Date | null>(null);
+  const [orderEndDate, setOrderEndDate] = useState<Date | null>(null);
 
   useEffect(() => {
     if (activeTab === 'catalog') {
@@ -79,8 +79,8 @@ export default function Dashboard() {
       const url = new URL('http://localhost:3000/api/orders');
       url.searchParams.append('page', pageToFetch.toString());
       if (orderSearchQuery) url.searchParams.append('q', orderSearchQuery);
-      if (orderStartDate) url.searchParams.append('startDate', orderStartDate);
-      if (orderEndDate) url.searchParams.append('endDate', orderEndDate);
+      if (orderStartDate) url.searchParams.append('startDate', orderStartDate.toISOString());
+      if (orderEndDate) url.searchParams.append('endDate', orderEndDate.toISOString());
       
       const res = await fetch(url.toString(), {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -436,26 +436,30 @@ export default function Dashboard() {
             />
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>From:</span>
-              <input 
-                type="date" 
-                value={orderStartDate}
-                onChange={e => setOrderStartDate(e.target.value)}
-                style={{ 
-                  padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', 
-                  border: '1px solid var(--panel-border)', color: 'white', outline: 'none'
-                }} 
+              <DatePicker
+                selected={orderStartDate}
+                onChange={(date: Date | null) => setOrderStartDate(date)}
+                dateFormat="yyyy-MM-dd"
+                placeholderText="Select start date"
+                className="input-field"
+                wrapperClassName="date-picker-wrapper"
+                isClearable
+                maxDate={orderEndDate || undefined}
+                customInput={<input style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'white', outline: 'none', width: '120px' }} />}
               />
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>To:</span>
-              <input 
-                type="date" 
-                value={orderEndDate}
-                onChange={e => setOrderEndDate(e.target.value)}
-                style={{ 
-                  padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', 
-                  border: '1px solid var(--panel-border)', color: 'white', outline: 'none'
-                }} 
+              <DatePicker
+                selected={orderEndDate}
+                onChange={(date: Date | null) => setOrderEndDate(date)}
+                dateFormat="yyyy-MM-dd"
+                placeholderText="Select end date"
+                className="input-field"
+                wrapperClassName="date-picker-wrapper"
+                isClearable
+                minDate={orderStartDate || undefined}
+                customInput={<input style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)', color: 'white', outline: 'none', width: '120px' }} />}
               />
             </div>
           </div>

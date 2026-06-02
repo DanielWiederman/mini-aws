@@ -73,6 +73,7 @@ async function startCqrsEngine() {
       'ON', 'JSON',
       'PREFIX', '1', 'order:',
       'SCHEMA',
+      '$.orderId', 'AS', 'orderId', 'TEXT',
       '$.customerName', 'AS', 'customerName', 'TEXT',
       '$.status', 'AS', 'status', 'TAG',
       '$.createdAt', 'AS', 'createdAt', 'NUMERIC', 'SORTABLE',

@@ -623,9 +623,10 @@ app.get('/api/orders', requireAdmin, async (req, res) => {
 
     // 1. Unified Search text filter
     if (q) {
-      const safeQ = q.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).filter(Boolean).map(t => `${t}*`).join(' ');
-      if (safeQ) {
-        queryParts.push(`(@customerName:(${safeQ}) | @itemTitle:(${safeQ}))`);
+      const tokens = q.replace(/[^a-zA-Z0-9 _-]/g, '').split(/\s+/).filter(Boolean);
+      if (tokens.length > 0) {
+        const tokenQueries = tokens.map(t => `((@orderId:*${t}*) | (@customerName:*${t}*) | (@itemTitle:*${t}*))`);
+        queryParts.push(tokenQueries.join(' '));
       }
     }
     
