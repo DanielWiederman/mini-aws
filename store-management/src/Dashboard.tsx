@@ -20,8 +20,14 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'orders'>('catalog');
   const [searchQuery, setSearchQuery] = useState('');
   const [orders, setOrders] = useState<any[]>([]);
-  const [nextOrderCursor, setNextOrderCursor] = useState<string | null>(null);
+  const [orderPage, setOrderPage] = useState<number>(1);
+  const [orderTotalPages, setOrderTotalPages] = useState<number>(1);
   const [orderFilter, setOrderFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED' | 'PENDING'>('ALL');
+  
+  // Orders Search & Filter States
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+  const [orderStartDate, setOrderStartDate] = useState('');
+  const [orderEndDate, setOrderEndDate] = useState('');
 
   useEffect(() => {
     if (activeTab === 'catalog') {
@@ -29,7 +35,7 @@ export default function Dashboard() {
     } else {
       fetchOrders();
     }
-  }, [activeTab]);
+  }, [activeTab, orderSearchQuery, orderStartDate, orderEndDate]);
 
   useEffect(() => {
     const socket = io('http://localhost:4000');
@@ -68,10 +74,13 @@ export default function Dashboard() {
     return () => { socket.disconnect(); };
   }, [activeTab, token]);
 
-  const fetchOrders = async (cursor?: string) => {
+  const fetchOrders = async (pageToFetch: number = 1) => {
     try {
       const url = new URL('http://localhost:3000/api/orders');
-      if (cursor) url.searchParams.append('cursor', cursor);
+      url.searchParams.append('page', pageToFetch.toString());
+      if (orderSearchQuery) url.searchParams.append('q', orderSearchQuery);
+      if (orderStartDate) url.searchParams.append('startDate', orderStartDate);
+      if (orderEndDate) url.searchParams.append('endDate', orderEndDate);
       
       const res = await fetch(url.toString(), {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -84,12 +93,13 @@ export default function Dashboard() {
       
       const data = await res.json();
       
-      if (cursor) {
+      if (pageToFetch > 1) {
         setOrders(prev => [...prev, ...(data.data || [])]);
       } else {
         setOrders(data.data || []);
       }
-      setNextOrderCursor(data.nextCursor || null);
+      setOrderPage(data.page || 1);
+      setOrderTotalPages(data.totalPages || 1);
     } catch (e) {
       console.error(e);
     }
@@ -410,6 +420,45 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
+
+          {/* Orders Search Bar */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+            <input 
+              type="text" 
+              placeholder="Search by Order ID, Customer, or Items..." 
+              value={orderSearchQuery}
+              onChange={e => setOrderSearchQuery(e.target.value)}
+              style={{ 
+                flex: 1, minWidth: '250px', padding: '10px 16px', borderRadius: '8px', 
+                background: 'rgba(0,0,0,0.3)', border: '1px solid var(--panel-border)',
+                color: 'white', outline: 'none'
+              }} 
+            />
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>From:</span>
+              <input 
+                type="date" 
+                value={orderStartDate}
+                onChange={e => setOrderStartDate(e.target.value)}
+                style={{ 
+                  padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', 
+                  border: '1px solid var(--panel-border)', color: 'white', outline: 'none'
+                }} 
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>To:</span>
+              <input 
+                type="date" 
+                value={orderEndDate}
+                onChange={e => setOrderEndDate(e.target.value)}
+                style={{ 
+                  padding: '8px 12px', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', 
+                  border: '1px solid var(--panel-border)', color: 'white', outline: 'none'
+                }} 
+              />
+            </div>
+          </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {orders.filter(o => orderFilter === 'ALL' || o.status === orderFilter).length === 0 ? (
@@ -455,17 +504,16 @@ export default function Dashboard() {
             )}
           </div>
 
-          {nextOrderCursor && (
-            <div style={{ textAlign: 'center', marginTop: '24px' }}>
-              <button 
-                className="btn-primary" 
-                onClick={() => fetchOrders(nextOrderCursor)}
-                style={{ padding: '8px 24px' }}
-              >
-                Load More Orders
-              </button>
-            </div>
-          )}
+            {orderPage < orderTotalPages && (
+              <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                <button 
+                  style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', borderRadius: '8px', cursor: 'pointer' }}
+                  onClick={() => fetchOrders(orderPage + 1)}
+                >
+                  Load More Orders
+                </button>
+              </div>
+            )}
         </div>
       )}
 

@@ -588,7 +588,7 @@ app.post('/api/orders', async (req, res) => {
 // --- ORDERS READ SIDE (QUERIES) ---
 app.get('/api/orders/:id', async (req, res) => {
   try {
-    const orderStr = await redis.hget('orders_view', req.params.id);
+    const orderStr = await redis.call('JSON.GET', `order:${req.params.id}`) as string | null;
     if (!orderStr) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -601,33 +601,71 @@ app.get('/api/orders/:id', async (req, res) => {
 
 app.get('/api/orders', requireAdmin, async (req, res) => {
   try {
-    const ordersMap = await redis.hgetall('orders_view');
-    const orders = Object.values(ordersMap).map(o => JSON.parse(o));
-    
-    // Sort by timestamp extracted from orderId (e.g. order_168038... or test_order_168038...)
-    orders.sort((a, b) => {
-      const matchA = a.orderId.match(/\d{13}/);
-      const matchB = b.orderId.match(/\d{13}/);
-      const tsA = matchA ? parseInt(matchA[0], 10) : 0;
-      const tsB = matchB ? parseInt(matchB[0], 10) : 0;
-      return tsB - tsA;
-    });
-    
-    const cursor = req.query.cursor as string;
+    const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+    const q = (req.query.q as string || '').trim();
+    const startDate = req.query.startDate as string;
+    const endDate = req.query.endDate as string;
+    const status = req.query.status as string;
 
-    let sortedOrders = orders;
-    if (cursor) {
-      const cursorIndex = sortedOrders.findIndex(o => o.orderId === cursor);
-      if (cursorIndex >= 0) {
-        sortedOrders = sortedOrders.slice(cursorIndex + 1);
+    const queryParts = [];
+
+    // 1. Unified Search text filter
+    if (q) {
+      const safeQ = q.replace(/[^a-zA-Z0-9 ]/g, '').split(/\s+/).filter(Boolean).map(t => `${t}*`).join(' ');
+      if (safeQ) {
+        queryParts.push(`(@customerName:(${safeQ}) | @itemTitle:(${safeQ}))`);
       }
     }
     
-    const paginated = sortedOrders.slice(0, limit);
-    const nextCursor = paginated.length === limit ? paginated[paginated.length - 1].orderId : null;
+    // 2. Date boundaries filter
+    if (startDate || endDate) {
+      const startMs = startDate ? new Date(startDate).getTime() : 0;
+      let endMs: number | string = '+inf';
+      if (endDate) {
+        const endD = new Date(endDate);
+        endD.setHours(23, 59, 59, 999);
+        endMs = endD.getTime();
+      }
+      queryParts.push(`@createdAt:[${startMs} ${endMs}]`);
+    }
+
+    // 3. Status filter
+    if (status) {
+      queryParts.push(`@status:{${status}}`);
+    }
+
+    const ftQuery = queryParts.length > 0 ? queryParts.join(' ') : '*';
+
+    const searchArgs: any[] = [
+      'FT.SEARCH', 'idx:orders', ftQuery,
+      'SORTBY', 'createdAt', 'DESC',
+      'LIMIT', offset.toString(), limit.toString()
+    ];
+
+    const searchRes = await redis.call(...(searchArgs as [string, ...string[]])) as any[];
     
-    res.json({ data: paginated, nextCursor });
+    const totalCount = searchRes[0] as number;
+    const data = [];
+    
+    for (let i = 1; i < searchRes.length; i += 2) {
+      const fields = searchRes[i+1] as string[];
+      const dollarIndex = fields.indexOf('$');
+      if (dollarIndex !== -1 && fields[dollarIndex + 1]) {
+        data.push(JSON.parse(fields[dollarIndex + 1]));
+      } else if (fields.length > 0 && fields[0].startsWith('{')) {
+        data.push(JSON.parse(fields[0]));
+      }
+    }
+
+    res.json({
+      data,
+      total: totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit)
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch orders' });

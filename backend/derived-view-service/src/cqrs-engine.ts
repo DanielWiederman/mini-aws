@@ -29,6 +29,7 @@ interface ReadModelOrderSummary {
   purchasedItems: { productId: string; title: string; qty: number; totalCost: number }[];
   invoiceTotal: number;
   processedAt: string;
+  createdAt: number;
 }
 const finalizedOrdersView: ReadModelOrderSummary[] = [];
 
@@ -57,12 +58,32 @@ async function startCqrsEngine() {
     console.log('📚 RediSearch index idx:catalog created');
   } catch (e: any) {
     if (e.message.includes('Index already exists')) {
-      console.log('📚 RediSearch index idx:catalog already exists, recreating...');
-      await redis.call('FT.DROPINDEX', 'idx:catalog');
-      await createIndex();
-      console.log('📚 RediSearch index idx:catalog recreated');
+      console.log('📚 RediSearch index idx:catalog already exists, skipping creation.');
     } else {
       console.error('Failed to create RediSearch index:', e);
+    }
+  }
+
+  const createOrdersIndex = async () => {
+    await redis.call(
+      'FT.CREATE', 'idx:orders',
+      'ON', 'JSON',
+      'PREFIX', '1', 'order:',
+      'SCHEMA',
+      '$.customerName', 'AS', 'customerName', 'TEXT',
+      '$.status', 'AS', 'status', 'TAG',
+      '$.createdAt', 'AS', 'createdAt', 'NUMERIC', 'SORTABLE',
+      '$.purchasedItems[*].title', 'AS', 'itemTitle', 'TEXT'
+    );
+  };
+  try {
+    await createOrdersIndex();
+    console.log('📚 RediSearch index idx:orders created');
+  } catch (e: any) {
+    if (e.message.includes('Index already exists')) {
+      console.log('📚 RediSearch index idx:orders already exists, skipping creation.');
+    } else {
+      console.error('Failed to create RediSearch index idx:orders:', e);
     }
   }
   // ---------------------------------
@@ -171,12 +192,14 @@ async function startCqrsEngine() {
           customerTier,
           purchasedItems,
           invoiceTotal: parseFloat(invoiceTotal.toFixed(2)),
-          processedAt: new Date().toLocaleTimeString()
+          processedAt: new Date().toLocaleTimeString(),
+          createdAt: rawOrder.timestamp ? new Date(rawOrder.timestamp).getTime() : Date.now()
         };
 
         // 3. Save directly to the materialized view in Redis and Publish to Pub/Sub
         const payloadStr = JSON.stringify(materializedOrder);
         await redis.hset('orders_view', rawOrder.orderId, payloadStr);
+        await redis.call('JSON.SET', `order:${rawOrder.orderId}`, '$', payloadStr);
         await redis.publish('orders_pubsub', payloadStr);
 
         finalizedOrdersView.push(materializedOrder);
