@@ -22,6 +22,46 @@ const idempotencyDb = open({ path: './db/idempotency', compression: true });
 // CQRS Query Side: Connect to the highly-available Redis store
 const redis = new Redis('redis://localhost:6379');
 
+// --- TOKEN BUCKET RATE LIMITER ---
+const tokenBucketScript = `
+  local capacity = tonumber(ARGV[1])
+  local refillRate = tonumber(ARGV[2])
+  local now = tonumber(ARGV[3])
+  local requested = 1
+
+  local bucket = redis.call('HMGET', KEYS[1], 'tokens', 'last_refill')
+  local tokens = tonumber(bucket[1])
+  local last_refill = tonumber(bucket[2])
+
+  if not tokens then
+    tokens = capacity
+    last_refill = now
+  else
+    local elapsed = math.max(0, now - last_refill)
+    local refilled = elapsed * refillRate
+    tokens = math.min(capacity, tokens + refilled)
+    last_refill = now
+  end
+
+  if tokens >= requested then
+    tokens = tokens - requested
+    redis.call('HMSET', KEYS[1], 'tokens', tokens, 'last_refill', last_refill)
+    redis.call('EXPIRE', KEYS[1], math.ceil(capacity / refillRate))
+    return 1
+  else
+    redis.call('HMSET', KEYS[1], 'tokens', tokens, 'last_refill', last_refill)
+    redis.call('EXPIRE', KEYS[1], math.ceil(capacity / refillRate))
+    return 0
+  end
+`;
+
+async function checkRateLimit(key: string, capacity: number, refillRatePerSec: number): Promise<boolean> {
+  const now = Date.now() / 1000;
+  const result = await redis.eval(tokenBucketScript, 1, key, capacity, refillRatePerSec, now);
+  return result === 1;
+}
+// ---------------------------------
+
 const kafka = new Kafka({
   clientId: 'api-gateway',
   brokers: ['localhost:9092']
@@ -83,17 +123,13 @@ app.post('/api/customers/login', async (req, res) => {
       return res.status(400).json({ error: 'Missing email or password' });
     }
 
-    // --- Redis Fixed Window Rate Limiting ---
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    // --- Redis Token Bucket Rate Limiting ---
+    const ip = req.header('X-Test-IP') || req.ip || req.socket.remoteAddress || 'unknown';
     const rateLimitKey = `ratelimit:login:${ip}`;
     
-    const attempts = await redis.incr(rateLimitKey);
-    if (attempts === 1) {
-      // 10 second window
-      await redis.expire(rateLimitKey, 10);
-    }
-
-    if (attempts > 5) {
+    // Capacity 5, Refill Rate: 0.5 tokens/sec (1 token every 2 seconds)
+    const allowed = await checkRateLimit(rateLimitKey, 5, 0.5);
+    if (!allowed) {
       return res.status(429).json({ error: 'Too many login attempts from this IP. Please try again later.' });
     }
     // ----------------------------------------
@@ -428,16 +464,13 @@ app.get('/api/catalog', async (req, res) => {
     }
 
     if (!isAdmin) {
-      // --- Redis Fixed Window Rate Limiting for Public Search ---
-      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      // --- Redis Token Bucket Rate Limiting for Public Search ---
+      const ip = req.header('X-Test-IP') || req.ip || req.socket.remoteAddress || 'unknown';
       const rateLimitKey = `ratelimit:search:${ip}`;
       
-      const attempts = await redis.incr(rateLimitKey);
-      if (attempts === 1) {
-        await redis.expire(rateLimitKey, 10); // 10 second window
-      }
-
-      if (attempts > 10) { // Limit to 10 requests per 10 seconds for public users
+      // Capacity 10, Refill Rate: 1 token/sec
+      const allowed = await checkRateLimit(rateLimitKey, 10, 1);
+      if (!allowed) {
         return res.status(429).json({ error: 'Too many search requests from this IP. Please try again later.' });
       }
       // ----------------------------------------
@@ -521,13 +554,11 @@ app.post('/api/orders', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // --- Redis Fixed Window Rate Limiting (by Customer ID) ---
+    // --- Redis Token Bucket Rate Limiting (by Customer ID) ---
     const rateLimitKey = `ratelimit:orders:${payload.customerId}`;
-    const attempts = await redis.incr(rateLimitKey);
-    if (attempts === 1) {
-      await redis.expire(rateLimitKey, 10); // 10 second window
-    }
-    if (attempts > 5) {
+    // Capacity 5, Refill Rate: 0.5 tokens/sec
+    const allowed = await checkRateLimit(rateLimitKey, 5, 0.5);
+    if (!allowed) {
       return res.status(429).json({ error: 'Too many orders placed recently. Please try again later.' });
     }
     // ---------------------------------------------------------

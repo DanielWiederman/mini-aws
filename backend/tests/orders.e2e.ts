@@ -53,7 +53,7 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
 
   await t.test('3. Wait for Saga Completion', async () => {
     // Saga involves Orders -> Kafka -> Catalog/Customers -> Kafka -> Orders -> Kafka -> CQRS -> Redis
-    await delay(4000); 
+    await delay(7000); 
   });
 
   await t.test('4. Verify Saga Completed Successfully', async () => {

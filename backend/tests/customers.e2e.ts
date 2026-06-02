@@ -9,6 +9,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 test('Customers Service E2E Lifecycle (CQRS & Event Sourcing)', async (t: TestContext) => {
   const testCustomerId = `test_cust_${Date.now()}`;
   const testEmail = `alice_${Date.now()}@example.com`;
+  const testIp = `10.0.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`;
 
   await t.test('1. Create Customer Command (Write Side)', async () => {
     const payload = {
@@ -78,7 +79,7 @@ test('Customers Service E2E Lifecycle (CQRS & Event Sourcing)', async (t: TestCo
   await t.test('7. Test Login Success', async () => {
     const res = await fetch(`${API_URL}/customers/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Test-IP': testIp },
       body: JSON.stringify({ email: testEmail, password: 'my_super_secret_password' })
     });
     
@@ -91,7 +92,7 @@ test('Customers Service E2E Lifecycle (CQRS & Event Sourcing)', async (t: TestCo
   await t.test('8. Test Login Failure (Wrong Password)', async () => {
     const res = await fetch(`${API_URL}/customers/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Test-IP': testIp },
       body: JSON.stringify({ email: testEmail, password: 'wrong_password' })
     });
     
@@ -109,7 +110,7 @@ test('Customers Service E2E Lifecycle (CQRS & Event Sourcing)', async (t: TestCo
     // Login
     const loginRes = await fetch(`${API_URL}/customers/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Test-IP': testIp },
       body: JSON.stringify({ email: testEmail, password: 'my_super_secret_password' })
     });
     assert.strictEqual(loginRes.status, 200);

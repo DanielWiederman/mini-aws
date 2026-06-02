@@ -13,7 +13,7 @@ test('Rate Limiting E2E Tests (Redis Fixed Window)', async (t: TestContext) => {
     for (let i = 1; i <= 7; i++) {
       const res = await fetch(`${API_URL}/customers/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Test-IP': '192.168.1.99' },
         body: JSON.stringify({ email: testEmail, password: 'wrong_password' })
       });
 
