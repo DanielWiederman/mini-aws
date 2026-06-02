@@ -1,7 +1,7 @@
 import { Kafka, Partitioners } from 'kafkajs';
 import { db } from './db.js';
 import { CatalogModel } from './catalog-model.js';
-import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, tracedEachMessage } from 'shared-contracts';
+import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, tracedEachMessage, KafkaLogger } from 'shared-contracts';
 import { sql } from 'kysely';
 import { initScheduler, priceUpdateQueue } from './scheduler.js';
 import Redis from 'ioredis';
@@ -13,7 +13,8 @@ const kafka = new Kafka({
 
 const consumer = kafka.consumer({ groupId: 'catalog-service-group' });
 const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
-const catalogModel = new CatalogModel(producer);
+const sysLogger = new KafkaLogger(producer, 'catalog-service');
+const catalogModel = new CatalogModel(producer, sysLogger);
 const redis = new Redis('redis://localhost:6379');
 
 async function initDB() {

@@ -1,7 +1,7 @@
 import { Kafka, Consumer, Producer, Partitioners } from 'kafkajs';
 import { initDb } from './db.js';
 import { CustomerModel } from './customer-model.js';
-import { CustomerCommand, tracedEachMessage } from 'shared-contracts';
+import { CustomerCommand, tracedEachMessage, KafkaLogger } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'customers-service-worker',
@@ -18,7 +18,8 @@ async function startWorker() {
   await producer.connect();
   await consumer.connect();
 
-  const customerModel = new CustomerModel(producer);
+  const sysLogger = new KafkaLogger(producer, 'customers-service');
+  const customerModel = new CustomerModel(producer, sysLogger);
 
   await consumer.subscribe({ topic: 'customer-commands-topic', fromBeginning: false });
   await consumer.subscribe({ topic: 'orders-topic', fromBeginning: true });

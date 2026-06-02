@@ -1,11 +1,11 @@
 import { db } from './db.js';
 import { sql } from 'kysely';
 import { Producer } from 'kafkajs';
-import { CatalogEvent, sendTraced } from 'shared-contracts';
+import { CatalogEvent, sendTraced, KafkaLogger } from 'shared-contracts';
 import { priceUpdateQueue } from './scheduler.js';
 
 export class CatalogModel {
-  constructor(private producer: Producer) {}
+  constructor(private producer: Producer, private sysLogger: KafkaLogger) {}
 
   async createProduct(product: Omit<CatalogEvent, 'eventType'>) {
     // 1. Emit START event
@@ -217,6 +217,7 @@ export class CatalogModel {
           });
         }
       });
+      this.sysLogger.info(`Stock Reserved: Order ${orderEvent.orderId} reserved items successfully`).catch(() => {});
       console.log(`[CatalogModel] Reserved stock for order ${orderEvent.orderId}`);
       
       // Emit updates to sync Redis view
@@ -225,6 +226,7 @@ export class CatalogModel {
       }
     } catch (e: any) {
       success = false;
+      this.sysLogger.error(`Stock Denied: Order ${orderEvent.orderId} failed due to ${e.message}`).catch(() => {});
       console.log(`[CatalogModel] Stock reservation denied for ${orderEvent.orderId}: ${e.message}`);
     }
     
@@ -269,6 +271,7 @@ export class CatalogModel {
           }
         }
       });
+      this.sysLogger.warn(`Compensating Transaction: Restored stock for cancelled order ${orderId}`).catch(() => {});
       console.log(`[CatalogModel] Compensating Transaction: Restored stock for cancelled order ${orderId}`);
       
       // Emit updates to sync Redis view

@@ -1,10 +1,10 @@
 import { db } from './db.js';
 import { Producer } from 'kafkajs';
-import { CustomerEvent, sendTraced, CreateCustomerCommandPayload } from 'shared-contracts';
+import { CustomerEvent, sendTraced, CreateCustomerCommandPayload, KafkaLogger } from 'shared-contracts';
 import bcrypt from 'bcryptjs';
 
 export class CustomerModel {
-  constructor(private producer: Producer) {}
+  constructor(private producer: Producer, private sysLogger: KafkaLogger) {}
 
   async createCustomer(payload: CreateCustomerCommandPayload) {
     // 1. Emit START event
@@ -117,11 +117,14 @@ export class CustomerModel {
       });
       
       if (success) {
+        this.sysLogger.info(`Customer Validated: ${orderEvent.customerId} is valid for order ${orderEvent.orderId}`).catch(() => {});
         console.log(`[CustomerModel] Validated customer ${orderEvent.customerId} for order ${orderEvent.orderId}`);
       } else {
+        this.sysLogger.error(`Customer Invalid: ${orderEvent.customerId} not found for order ${orderEvent.orderId}`).catch(() => {});
         console.log(`[CustomerModel] Validation FAILED (Not Found) for customer ${orderEvent.customerId}`);
       }
     } catch (e: any) {
+      this.sysLogger.error(`Customer Validation Failed: ${orderEvent.customerId} failed due to ${e.message}`).catch(() => {});
       console.log(`[CustomerModel] Validation failed for customer ${orderEvent.customerId}: ${e.message}`);
     }
     

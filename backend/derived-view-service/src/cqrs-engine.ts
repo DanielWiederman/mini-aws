@@ -1,5 +1,5 @@
 import { Kafka, Consumer } from 'kafkajs';
-import { CustomerEvent, CatalogEvent, OrderEvent } from 'shared-contracts';
+import { CustomerEvent, CatalogEvent, OrderEvent, KafkaLogger } from 'shared-contracts';
 import { open } from 'lmdb';
 import Redis from 'ioredis';
 
@@ -12,6 +12,8 @@ const kafka = new Kafka({
 
 // A single consumer group that subscribes to multiple topics
 const consumer: Consumer = kafka.consumer({ groupId: 'cqrs-view-group-2' });
+const producer = kafka.producer();
+const sysLogger = new KafkaLogger(producer, 'derived-view-service');
 
 // --- LOCAL STATE STORES (Backed by LMDB for persistence and high performance) ---
 const customerTable = open({ path: './db/customers', compression: true });
@@ -34,6 +36,7 @@ interface ReadModelOrderSummary {
 const finalizedOrdersView: ReadModelOrderSummary[] = [];
 
 async function startCqrsEngine() {
+  await producer.connect();
   await consumer.connect();
   
   // Subscribe to all 3 upstream data feeds
@@ -101,6 +104,7 @@ async function startCqrsEngine() {
 
         const isNew = customerTable.get(customer.customerId) === undefined;
         await customerTable.put(customer.customerId, customer);
+        sysLogger.info(`Customer state materialized: ${customer.customerId} (Event: ${customer.eventType})`).catch(() => {});
         
         // Expose public profile (without password hash)
         const publicProfile = {
@@ -131,6 +135,7 @@ async function startCqrsEngine() {
         if (!catalog.eventType?.endsWith('_END')) return;
 
         await catalogTable.put(catalog.productId, catalog);
+        sysLogger.info(`Catalog item materialized: ${catalog.title} (${catalog.productId})`).catch(() => {});
         
         // Phase 2: Sync Materialized View to Redis
         if (catalog.isDeleted) {

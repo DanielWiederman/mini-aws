@@ -26,10 +26,13 @@ async function initDb() {
     .execute();
     
   console.log('📝 [Logs DB] Initialized tables');
+
+  const countRes = await sql<{count: string}>`SELECT COUNT(*) as count FROM system_logs`.execute(db);
+  return parseInt(countRes.rows[0].count, 10);
 }
 
 async function run() {
-  await initDb();
+  let logsCount = await initDb();
   await consumer.connect();
   await consumer.subscribe({ topic: 'system-logs-topic', fromBeginning: true });
   
@@ -59,6 +62,13 @@ async function run() {
           console.error(`🚨 [Log DB Sink] Recorded ERROR from ${logEvent.service}: ${logEvent.message}`);
         } else {
           console.log(`ℹ️ [Log DB Sink] Recorded ${logEvent.level} from ${logEvent.service}`);
+        }
+
+        logsCount++;
+        if (logsCount % 100 === 0 && logsCount > 5000) {
+          const delta = logsCount - 5000;
+          await sql`DELETE FROM system_logs WHERE id IN (SELECT id FROM system_logs ORDER BY timestamp ASC LIMIT ${delta})`.execute(db);
+          logsCount -= delta;
         }
 
       } catch (e) {

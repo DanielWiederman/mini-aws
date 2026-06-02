@@ -1,4 +1,5 @@
 import { Producer } from 'kafkajs';
+import { sendTraced } from './kafka-tracing.js';
 
 export interface LogEvent {
   level: 'INFO' | 'WARN' | 'ERROR';
@@ -37,10 +38,7 @@ export class KafkaLogger {
         timestamp: new Date().toISOString()
       };
 
-      await this.producer.send({
-        topic: 'system-logs-topic',
-        messages: [{ value: JSON.stringify(logEvent) }]
-      });
+      await sendTraced(this.producer, 'system-logs-topic', [{ value: JSON.stringify(logEvent) }]);
     } catch (e) {
       // Fallback to console if Kafka logger fails, to prevent infinite crash loops
       console.error(`[KafkaLogger] Failed to send log to Kafka:`, e);

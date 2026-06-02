@@ -1,10 +1,10 @@
 import { db } from './db.js';
 import { sql } from 'kysely';
 import { Producer } from 'kafkajs';
-import { OrderEvent, CreateOrderCommandPayload, sendTraced } from 'shared-contracts';
+import { OrderEvent, CreateOrderCommandPayload, sendTraced, KafkaLogger } from 'shared-contracts';
 
 export class OrdersModel {
-  constructor(private producer: Producer) {}
+  constructor(private producer: Producer, private sysLogger: KafkaLogger) {}
 
   async createPendingOrder(payload: CreateOrderCommandPayload) {
     try {
@@ -43,6 +43,7 @@ export class OrdersModel {
       });
       
       await this.flushOutbox(payload.orderId);
+      this.sysLogger.info(`Saga Started: PENDING order ${payload.orderId} created`).catch(() => {});
       console.log(`[OrdersModel] Created PENDING order ${payload.orderId}. Flushed ORDER_PENDING_END to outbox`);
     } catch (e) {
       console.error('Failed to create pending order', e);

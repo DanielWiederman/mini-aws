@@ -2,7 +2,7 @@ import { Kafka, Partitioners } from 'kafkajs';
 import { sql } from 'kysely';
 import { db } from './db.js';
 import { OrdersModel } from './orders-model.js';
-import { OrderCommand, CreateOrderCommandPayload, OrderEvent, tracedEachMessage } from 'shared-contracts';
+import { OrderCommand, CreateOrderCommandPayload, OrderEvent, tracedEachMessage, KafkaLogger } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'orders-service-worker',
@@ -11,7 +11,8 @@ const kafka = new Kafka({
 
 const consumer = kafka.consumer({ groupId: 'orders-service-group' });
 const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
-const ordersModel = new OrdersModel(producer);
+const sysLogger = new KafkaLogger(producer, 'orders-service');
+const ordersModel = new OrdersModel(producer, sysLogger);
 
 async function initDB() {
   await db.schema
