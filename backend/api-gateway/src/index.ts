@@ -490,8 +490,14 @@ app.get('/api/orders', requireAdmin, async (req, res) => {
     const ordersMap = await redis.hgetall('orders_view');
     const orders = Object.values(ordersMap).map(o => JSON.parse(o));
     
-    // Sort by processedAt descending (or orderId as a proxy for time)
-    orders.sort((a, b) => b.orderId.localeCompare(a.orderId));
+    // Sort by timestamp extracted from orderId (e.g. order_168038... or test_order_168038...)
+    orders.sort((a, b) => {
+      const matchA = a.orderId.match(/\d{13}/);
+      const matchB = b.orderId.match(/\d{13}/);
+      const tsA = matchA ? parseInt(matchA[0], 10) : 0;
+      const tsB = matchB ? parseInt(matchB[0], 10) : 0;
+      return tsB - tsA;
+    });
     
     const cursor = req.query.cursor as string;
     const limit = parseInt(req.query.limit as string) || 20;
