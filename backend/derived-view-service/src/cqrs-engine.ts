@@ -11,7 +11,7 @@ const kafka = new Kafka({
 });
 
 // A single consumer group that subscribes to multiple topics
-const consumer: Consumer = kafka.consumer({ groupId: 'cqrs-view-group' });
+const consumer: Consumer = kafka.consumer({ groupId: 'cqrs-view-group-2' });
 
 // --- LOCAL STATE STORES (Backed by LMDB for persistence and high performance) ---
 const customerTable = open({ path: './db/customers', compression: true });
@@ -38,6 +38,34 @@ async function startCqrsEngine() {
   // Subscribe to all 3 upstream data feeds
   await consumer.subscribe({ topics: ['customer-topic', 'catalog-topic', 'orders-topic'], fromBeginning: true });
   console.log('📊 CQRS Derived View Engine Online. Waiting to process streams...');
+
+  // --- REDISEARCH INITIALIZATION ---
+  const createIndex = async () => {
+    await redis.call(
+      'FT.CREATE', 'idx:catalog',
+      'ON', 'JSON',
+      'PREFIX', '1', 'catalog:',
+      'SCHEMA',
+      '$.title', 'AS', 'title', 'TEXT',
+      '$.price', 'AS', 'price', 'NUMERIC', 'SORTABLE',
+      '$.stockCount', 'AS', 'stock', 'NUMERIC', 'SORTABLE'
+    );
+  };
+
+  try {
+    await createIndex();
+    console.log('📚 RediSearch index idx:catalog created');
+  } catch (e: any) {
+    if (e.message.includes('Index already exists')) {
+      console.log('📚 RediSearch index idx:catalog already exists, recreating...');
+      await redis.call('FT.DROPINDEX', 'idx:catalog');
+      await createIndex();
+      console.log('📚 RediSearch index idx:catalog recreated');
+    } else {
+      console.error('Failed to create RediSearch index:', e);
+    }
+  }
+  // ---------------------------------
 
   await consumer.run({
     eachMessage: async ({ topic, message }) => {
@@ -85,16 +113,14 @@ async function startCqrsEngine() {
         
         // Phase 2: Sync Materialized View to Redis
         if (catalog.isDeleted) {
-          await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+          await redis.call('JSON.DEL', `catalog:${catalog.productId}`);
           await redis.publish('catalog_pubsub', JSON.stringify(catalog));
           updateDashboard(`Catalog product deleted: ${catalog.title}`);
         } else {
-          await redis.hset('catalog_view', catalog.productId, JSON.stringify(catalog));
+          await redis.call('JSON.SET', `catalog:${catalog.productId}`, '$', JSON.stringify(catalog));
           await redis.publish('catalog_pubsub', JSON.stringify(catalog));
           updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
         }
-
-        updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
       }
 
       // ROUTE 3: The Order arrives! Execute real-time stream processing join logic

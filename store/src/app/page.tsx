@@ -1,9 +1,14 @@
 import Link from 'next/link';
 import CatalogGridClient from '@/components/CatalogGridClient';
+import SearchBarClient from '@/components/SearchBarClient';
 
-async function getCatalog(page: number, limit: number) {
+async function getCatalog(page: number, limit: number, q?: string, sort?: string) {
   try {
-    const res = await fetch(`http://localhost:3000/api/catalog?page=${page}&limit=${limit}`, { 
+    let url = `http://localhost:3000/api/catalog?page=${page}&limit=${limit}`;
+    if (q) url += `&q=${encodeURIComponent(q)}`;
+    if (sort) url += `&sort=${encodeURIComponent(sort)}`;
+    
+    const res = await fetch(url, { 
       cache: 'no-store' // Always fetch latest for this demo
     });
     if (!res.ok) throw new Error('Failed to fetch data');
@@ -18,9 +23,18 @@ async function getCatalog(page: number, limit: number) {
 export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const params = await searchParams;
   const page = typeof params.page === 'string' ? parseInt(params.page) : 1;
+  const q = typeof params.q === 'string' ? params.q : undefined;
+  const sort = typeof params.sort === 'string' ? params.sort : undefined;
   const limit = 8; // Items per page
   
-  const catalog = await getCatalog(page, limit);
+  const catalog = await getCatalog(page, limit, q, sort);
+
+  const getPageLink = (p: number) => {
+    let url = `/?page=${p}`;
+    if (q) url += `&q=${encodeURIComponent(q)}`;
+    if (sort) url += `&sort=${encodeURIComponent(sort)}`;
+    return url;
+  };
 
   return (
     <div style={{ padding: '2rem 0' }}>
@@ -33,13 +47,15 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ [
         </p>
       </div>
 
+      <SearchBarClient />
+
       <CatalogGridClient initialCatalog={catalog.data} />
 
       {/* Pagination Controls */}
       {catalog.totalPages > 1 && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '4rem' }}>
           {page > 1 && (
-            <Link href={`/?page=${page - 1}`} className="btn btn-outline">
+            <Link href={getPageLink(page - 1)} className="btn btn-outline">
               Previous
             </Link>
           )}
@@ -47,7 +63,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ [
             Page {page} of {catalog.totalPages}
           </span>
           {page < catalog.totalPages && (
-            <Link href={`/?page=${page + 1}`} className="btn btn-outline">
+            <Link href={getPageLink(page + 1)} className="btn btn-outline">
               Next
             </Link>
           )}

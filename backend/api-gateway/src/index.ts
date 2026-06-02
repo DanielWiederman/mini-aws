@@ -110,7 +110,7 @@ app.post('/api/customers/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ customerId: authData.customerId, role: authData.role || 'CUSTOMER' }, 'secret_key', { expiresIn: '1h' });
+    const token = jwt.sign({ customerId: authData.customerId, role: authData.role || 'CUSTOMER' }, process.env.JWT_SECRET || 'secret_key', { expiresIn: '1h' });
     res.cookie('jwt', token, { httpOnly: true, maxAge: 3600000 });
     res.json({ token, customerId: authData.customerId, role: authData.role || 'CUSTOMER' });
 
@@ -167,7 +167,7 @@ const requireAdmin = (req: express.Request, res: express.Response, next: express
   const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const decoded = jwt.verify(token, 'secret_key') as any;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as any;
     if (decoded.role !== 'ADMIN' && decoded.role !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -182,7 +182,7 @@ const requireSuperAdmin = (req: express.Request, res: express.Response, next: ex
   const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const decoded = jwt.verify(token, 'secret_key') as any;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as any;
     if (decoded.role !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Forbidden: SUPER_ADMIN required' });
     }
@@ -383,7 +383,7 @@ app.get('/api/customers/me', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized: No token provided' });
     }
 
-    const decoded = jwt.verify(token, 'secret_key') as { customerId: string };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as { customerId: string };
     const customerStr = await redis.hget('customers_view', decoded.customerId);
     
     if (!customerStr) {
@@ -414,43 +414,100 @@ app.get('/api/customers/:id', async (req, res) => {
 
 app.get('/api/catalog', async (req, res) => {
   try {
+    let isAdmin = false;
+    const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as any;
+        if (decoded.role === 'ADMIN' || decoded.role === 'SUPER_ADMIN') {
+          isAdmin = true;
+        }
+      } catch (e) {
+        // Ignore invalid token for rate limiting bypass purposes
+      }
+    }
+
+    if (!isAdmin) {
+      // --- Redis Fixed Window Rate Limiting for Public Search ---
+      const ip = req.ip || req.socket.remoteAddress || 'unknown';
+      const rateLimitKey = `ratelimit:search:${ip}`;
+      
+      const attempts = await redis.incr(rateLimitKey);
+      if (attempts === 1) {
+        await redis.expire(rateLimitKey, 10); // 10 second window
+      }
+
+      if (attempts > 10) { // Limit to 10 requests per 10 seconds for public users
+        return res.status(429).json({ error: 'Too many search requests from this IP. Please try again later.' });
+      }
+      // ----------------------------------------
+    }
+
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
-    const allProducts = await redis.hgetall('catalog_view');
-    const results = Object.values(allProducts)
-      .map(v => JSON.parse(v))
-      .filter(p => !p.isDeleted); // Exclude soft-deleted products
-    
-    // Sort by productId for deterministic pagination
-    results.sort((a, b) => a.productId.localeCompare(b.productId));
-
+    const q = req.query.q as string;
+    const sort = req.query.sort as string;
     const startIndex = (page - 1) * limit;
-    const endIndex = page * limit;
-    const paginatedResults = results.slice(startIndex, endIndex);
+
+    let queryStr = '*';
+    if (q && q.trim().length > 0) {
+      // Prefix matching instead of leading wildcard to utilize the inverted index
+      const terms = q.trim().split(/\s+/).map(t => `${t}*`).join(' ');
+      queryStr = `@title:(${terms})`;
+    }
+
+    const searchArgs: any[] = [
+      'FT.SEARCH', 'idx:catalog', queryStr,
+      'LIMIT', startIndex, limit
+    ];
+
+    if (sort === 'price_desc') {
+      searchArgs.push('SORTBY', 'price', 'DESC');
+    } else if (sort === 'price_asc' || (!q || q.trim().length === 0)) {
+      searchArgs.push('SORTBY', 'price', 'ASC');
+    }
+
+    // Run RediSearch query
+    const searchRes = await redis.call(...(searchArgs as [string, ...string[]])) as any[];
+
+    // searchRes format: [total_results, key1, [key1_fields...], key2, [key2_fields...], ...]
+    const total = searchRes[0] as number;
+    const results = [];
+    
+    for (let i = 1; i < searchRes.length; i += 2) {
+      const fields = searchRes[i+1] as string[];
+      // fields array is typically ['$', '{"productId":"...","title":"..."}']
+      const dollarIndex = fields.indexOf('$');
+      if (dollarIndex !== -1 && fields[dollarIndex + 1]) {
+        results.push(JSON.parse(fields[dollarIndex + 1]));
+      } else if (fields.length > 0 && fields[0].startsWith('{')) {
+        results.push(JSON.parse(fields[0])); // Fallback depending on driver behavior
+      }
+    }
 
     res.json({
-      data: paginatedResults,
-      total: results.length,
+      data: results,
+      total,
       page,
       limit,
-      totalPages: Math.ceil(results.length / limit)
+      totalPages: Math.ceil(total / limit)
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to read catalog from Redis' });
+    res.status(500).json({ error: 'Failed to search catalog from Redis' });
   }
 });
 
 app.get('/api/catalog/:id', async (req, res) => {
   try {
-    const productStr = await redis.hget('catalog_view', req.params.id);
+    const productStr = await redis.call('JSON.GET', `catalog:${req.params.id}`) as string | null;
     if (!productStr) {
       return res.status(404).json({ error: 'Product not found' });
     }
     res.json(JSON.parse(productStr));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to read product from Redis' });
+    res.status(500).json({ error: 'Failed to read product from Redis JSON' });
   }
 });
 

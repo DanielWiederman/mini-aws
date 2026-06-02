@@ -77,7 +77,7 @@ services:
 
   # Phase 2: Highly Available Materialized View Store
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:latest
     ports:
       - "6379:6379"
 

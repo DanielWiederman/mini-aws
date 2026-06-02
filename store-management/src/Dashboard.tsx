@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [creatingProduct, setCreatingProduct] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState<'catalog' | 'orders'>('catalog');
+  const [searchQuery, setSearchQuery] = useState('');
   const [orders, setOrders] = useState<any[]>([]);
   const [nextOrderCursor, setNextOrderCursor] = useState<string | null>(null);
   const [orderFilter, setOrderFilter] = useState<'ALL' | 'COMPLETED' | 'CANCELLED' | 'PENDING'>('ALL');
@@ -95,10 +96,19 @@ export default function Dashboard() {
   };
 
   const fetchProducts = async () => {
-    const res = await fetch('http://localhost:3000/api/catalog?limit=50');
+    const res = await fetch(`http://localhost:3000/api/catalog?limit=50&q=${encodeURIComponent(searchQuery)}`);
     const data = await res.json();
     if (data.data) setProducts(data.data);
   };
+
+  useEffect(() => {
+    if (activeTab === 'catalog') {
+      const delayDebounceFn = setTimeout(() => {
+        fetchProducts();
+      }, 300);
+      return () => clearTimeout(delayDebounceFn);
+    }
+  }, [searchQuery]);
 
   const handleLogout = () => {
     localStorage.removeItem('store_admin_token');
@@ -245,7 +255,7 @@ export default function Dashboard() {
     <div style={{ padding: '40px', maxWidth: '1400px', margin: '0 auto' }}>
       
       {/* HEADER */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ 
             width: '48px', height: '48px', borderRadius: '12px', 
@@ -263,31 +273,7 @@ export default function Dashboard() {
           </div>
         </div>
         
-        <div style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px', borderRadius: '12px', border: '1px solid var(--panel-border)' }}>
-          <button 
-            onClick={() => setActiveTab('catalog')}
-            style={{ 
-              padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600,
-              background: activeTab === 'catalog' ? 'var(--primary)' : 'transparent',
-              color: activeTab === 'catalog' ? '#fff' : 'var(--text-muted)',
-              transition: 'all 0.2s'
-            }}
-          >Catalog</button>
-          <button 
-            onClick={() => setActiveTab('orders')}
-            style={{ 
-              padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600,
-              background: activeTab === 'orders' ? 'var(--primary)' : 'transparent',
-              color: activeTab === 'orders' ? '#fff' : 'var(--text-muted)',
-              transition: 'all 0.2s'
-            }}
-          >Orders</button>
-        </div>
-
-        <div style={{ display: 'flex', gap: '16px' }}>
-          <button className="btn-primary" onClick={() => setCreatingProduct({ productId: `prod_${Date.now()}`, title: '', description: '', price: 0, stockCount: 0, image: '', thumbnail: '' })} style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--panel-border)' }}>
-            <Package size={18} /> Add Product
-          </button>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
           {role === 'SUPER_ADMIN' && (
             <button className="btn-primary" onClick={() => setShowAdminModal(true)} style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--panel-border)' }}>
               <UserPlus size={18} /> Provision Admin
@@ -299,8 +285,53 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div style={{ display: 'flex', gap: '8px', background: 'var(--panel-bg)', padding: '6px', borderRadius: '12px', border: '1px solid var(--panel-border)', marginBottom: '24px', width: 'fit-content' }}>
+        <button 
+          onClick={() => setActiveTab('catalog')}
+          style={{ 
+            padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600,
+            background: activeTab === 'catalog' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'catalog' ? '#fff' : 'var(--text-muted)',
+            transition: 'all 0.2s'
+          }}
+        >Catalog</button>
+        <button 
+          onClick={() => setActiveTab('orders')}
+          style={{ 
+            padding: '8px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600,
+            background: activeTab === 'orders' ? 'var(--primary)' : 'transparent',
+            color: activeTab === 'orders' ? '#fff' : 'var(--text-muted)',
+            transition: 'all 0.2s'
+          }}
+        >Orders</button>
+      </div>
+
       {activeTab === 'catalog' ? (
-        <div className="glass-panel" style={{ overflowX: 'auto' }}>
+        <div className="glass-panel" style={{ overflowX: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          
+          <div style={{ padding: '0 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            <input 
+              type="text" 
+              placeholder="Search products by title..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ 
+                flex: 1,
+                maxWidth: '500px', 
+                padding: '12px 20px', 
+                borderRadius: '12px', 
+                background: 'rgba(0,0,0,0.3)', 
+                border: '1px solid var(--panel-border)',
+                color: 'white',
+                outline: 'none',
+                fontSize: '1rem'
+              }} 
+            />
+            <button className="btn-primary" onClick={() => setCreatingProduct({ productId: `prod_${Date.now()}`, title: '', description: '', price: 0, stockCount: 0, image: '', thumbnail: '' })}>
+              <Package size={18} /> Add Product
+            </button>
+          </div>
+
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--panel-border)' }}>
