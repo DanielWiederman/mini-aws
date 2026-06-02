@@ -1,0 +1,93 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API Gateway",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter api-gateway dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Catalog Service",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter catalog-service dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Customers Service",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter customers-service dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Orders Service",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter orders-service dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Derived View Service",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter derived-view-service dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Logs Service",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter logs-service dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Assets Service",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter assets-service dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Websockets Service",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter websockets-service dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Store (Frontend)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter store dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Store Management",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter store-management dev",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Run All Services",
+      "configurations": [
+        "API Gateway",
+        "Catalog Service",
+        "Customers Service",
+        "Orders Service",
+        "Derived View Service",
+        "Logs Service",
+        "Assets Service",
+        "Websockets Service",
+        "Store (Frontend)",
+        "Store Management"
+      ],
+      "stopAll": true
+    }
+  ]
+}

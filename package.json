@@ -11,6 +11,7 @@
     "dev:view": "pnpm --filter derived-view-service dev",
     "dev:logs": "pnpm --filter logs-service dev",
     "dev:assets": "pnpm --filter assets-service dev",
+    "dev:websockets": "pnpm --filter websockets-service dev",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r --filter !mini-aws build",
     "test:e2e": "tsx --test backend/tests/*.e2e.ts"

@@ -26,8 +26,6 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 .idea/
-.vscode/
-
 # Temp / cache
 tmp/
 temp/
