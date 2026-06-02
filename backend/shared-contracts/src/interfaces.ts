@@ -42,7 +42,8 @@ export type CatalogCommandType =
   | 'UPDATE_PRICE_START' 
   | 'UPDATE_PRODUCT_START' 
   | 'DELETE_PRODUCT_START' 
-  | 'SCHEDULE_PRICE_UPDATE_COMMAND';
+  | 'SCHEDULE_PRICE_UPDATE_COMMAND'
+  | 'RESTORE_STOCK_COMMAND';
 
 export interface CatalogCommand {
   commandType: CatalogCommandType;
@@ -57,6 +58,11 @@ export interface CreateProductCommandPayload {
   description?: string;
   thumbnail?: string;
   image?: string;
+}
+
+export interface RestoreStockCommandPayload {
+  orderId: string;
+  items: { productId: string; quantity: number }[];
 }
 
 export interface UpdatePriceCommandPayload {

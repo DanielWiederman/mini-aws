@@ -34,5 +34,8 @@
       "lmdb",
       "msgpackr-extract"
     ]
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
   }
 }

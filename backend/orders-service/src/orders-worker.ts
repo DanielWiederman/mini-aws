@@ -35,6 +35,18 @@ async function initDB() {
     .addColumn('product_id', 'varchar', (col) => col.notNull())
     .addColumn('quantity', 'integer', (col) => col.notNull())
     .execute();
+
+  await db.schema
+    .createTable('outbox')
+    .ifNotExists()
+    .addColumn('id', 'serial', (col) => col.primaryKey())
+    .addColumn('topic', 'varchar', (col) => col.notNull())
+    .addColumn('key', 'varchar')
+    .addColumn('payload', 'jsonb', (col) => col.notNull())
+    .addColumn('event_id', 'varchar')
+    .addColumn('created_at', 'timestamp', (col) => col.defaultTo(sql`now()`).notNull())
+    .addColumn('processed_at', 'timestamp')
+    .execute();
     
   console.log('🛒 [Orders DB] Initialized tables');
 }
@@ -73,6 +85,15 @@ async function start() {
       }
     }),
   });
+
+  // Outbox Polling Relay for Crash Recovery
+  setInterval(async () => {
+    try {
+      await ordersModel.flushOutbox();
+    } catch (e) {
+      console.error('🛒 [Outbox Relay] Error during outbox sweep', e);
+    }
+  }, 5000);
 }
 
 start().catch(console.error);

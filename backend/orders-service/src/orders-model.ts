@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { sql } from 'kysely';
 import { Producer } from 'kafkajs';
 import { OrderEvent, CreateOrderCommandPayload, sendTraced } from 'shared-contracts';
 
@@ -23,18 +24,26 @@ export class OrdersModel {
             quantity: item.quantity
           }).execute();
         }
+        
+        const event: OrderEvent = {
+          eventType: 'ORDER_PENDING_END',
+          orderId: payload.orderId,
+          customerId: payload.customerId,
+          items: payload.items,
+          status: 'PENDING',
+          timestamp: new Date().toISOString()
+        };
+        
+        await trx.insertInto('outbox').values({
+          topic: 'orders-topic',
+          key: payload.orderId,
+          payload: JSON.stringify(event),
+          event_id: `${event.eventType}:${payload.orderId}:${event.timestamp}`
+        }).execute();
       });
       
-      const event: OrderEvent = {
-        eventType: 'ORDER_PENDING_END',
-        orderId: payload.orderId,
-        customerId: payload.customerId,
-        items: payload.items,
-        status: 'PENDING',
-        timestamp: new Date().toISOString()
-      };
-      await this.emitEvent(event);
-      console.log(`[OrdersModel] Created PENDING order ${payload.orderId}. Emitted ORDER_PENDING_END`);
+      await this.flushOutbox(payload.orderId);
+      console.log(`[OrdersModel] Created PENDING order ${payload.orderId}. Flushed ORDER_PENDING_END to outbox`);
     } catch (e) {
       console.error('Failed to create pending order', e);
       throw e;
@@ -42,10 +51,31 @@ export class OrdersModel {
   }
 
   async handleSagaResponse(orderId: string, eventType: 'STOCK_RESERVED_END' | 'STOCK_DENIED_END' | 'CUSTOMER_VALIDATED_END' | 'CUSTOMER_INVALID_END') {
+
     try {
       await db.transaction().execute(async (trx) => {
         const order = await trx.selectFrom('order').selectAll().where('order_id', '=', orderId).executeTakeFirst();
         if (!order) return;
+        
+        // RACE CONDITION FIX: If order is already CANCELLED but STOCK_RESERVED just arrived, we must restore it!
+        if (order.status === 'CANCELLED' && eventType === 'STOCK_RESERVED_END') {
+          const items = await trx.selectFrom('order_item').selectAll().where('order_id', '=', orderId).execute();
+          const orderItems = items.map(i => ({ productId: i.product_id, quantity: i.quantity }));
+          
+          const restoreCommandPayload = {
+            commandType: 'RESTORE_STOCK_COMMAND',
+            payload: { orderId, items: orderItems }
+          };
+          
+          await trx.insertInto('outbox').values({
+            topic: 'catalog-commands-topic',
+            key: orderId,
+            payload: JSON.stringify(restoreCommandPayload),
+            event_id: `${restoreCommandPayload.commandType}:${orderId}:${new Date().toISOString()}`
+          }).execute();
+          return;
+        }
+
         if (order.status !== 'PENDING') return; // State machine already finalized
 
         let updateData: any = {};
@@ -71,17 +101,24 @@ export class OrdersModel {
           const orderItems = items.map(i => ({ productId: i.product_id, quantity: i.quantity }));
           
           if (updateData.status === 'COMPLETED') {
-             await this.emitEvent({
+             const orderEventToEmit = {
                eventType: 'ORDER_COMPLETED_END',
                orderId,
                customerId: order.customer_id,
                items: orderItems,
                status: 'COMPLETED',
                timestamp: new Date().toISOString()
-             });
-             console.log(`[OrdersModel] Saga Complete: Order ${orderId} is now COMPLETED`);
+             };
+             
+             await trx.insertInto('outbox').values({
+               topic: 'orders-topic',
+               key: orderId,
+               payload: JSON.stringify(orderEventToEmit),
+               event_id: `${orderEventToEmit.eventType}:${orderId}:${orderEventToEmit.timestamp}`
+             }).execute();
+             
           } else if (updateData.status === 'CANCELLED') {
-             await this.emitEvent({
+             const orderEventToEmit = {
                eventType: 'ORDER_CANCELLED_END',
                orderId,
                customerId: order.customer_id,
@@ -89,19 +126,80 @@ export class OrdersModel {
                status: 'CANCELLED',
                reason: `Saga failed at ${eventType}`,
                timestamp: new Date().toISOString()
-             });
-             console.log(`[OrdersModel] Saga Failed: Order ${orderId} CANCELLED (${eventType})`);
+             };
+             
+             await trx.insertInto('outbox').values({
+               topic: 'orders-topic',
+               key: orderId,
+               payload: JSON.stringify(orderEventToEmit),
+               event_id: `${orderEventToEmit.eventType}:${orderId}:${orderEventToEmit.timestamp}`
+             }).execute();
+             
+             // COMPENSATING TRANSACTION: If stock was previously reserved, we must un-reserve it!
+             if (nextStockStatus === 'RESERVED') {
+               const restoreCommandPayload = {
+                 commandType: 'RESTORE_STOCK_COMMAND',
+                 payload: { orderId, items: orderItems }
+               };
+               
+               await trx.insertInto('outbox').values({
+                 topic: 'catalog-commands-topic',
+                 key: orderId,
+                 payload: JSON.stringify(restoreCommandPayload),
+                 event_id: `${restoreCommandPayload.commandType}:${orderId}:${new Date().toISOString()}`
+               }).execute();
+             }
           }
         }
       });
+
+      // Transaction committed. Flush the outbox for this order immediately!
+      await this.flushOutbox(orderId);
+
     } catch (e) {
       console.error(`Failed to handle saga response ${eventType} for ${orderId}`, e);
     }
   }
 
-  private async emitEvent(event: OrderEvent) {
-    await sendTraced(this.producer, 'orders-topic', [
-      { key: event.orderId, value: JSON.stringify(event) }
-    ]);
+  async flushOutbox(orderId?: string) {
+    try {
+      let query = db.selectFrom('outbox')
+        .selectAll()
+        .where('processed_at', 'is', null)
+        .orderBy('id', 'asc');
+
+      if (orderId) {
+        // If an orderId is provided, just process rows for that key
+        query = query.where('key', '=', orderId);
+      } else {
+        // For polling relay: pick rows older than 10 seconds
+        query = query.where('created_at', '<', sql<Date>`now() - interval '10 seconds'`);
+      }
+
+      const rows = await query.execute();
+      
+      for (const row of rows) {
+        try {
+          const payloadStr = typeof row.payload === 'string' ? row.payload : JSON.stringify(row.payload);
+          await sendTraced(this.producer, row.topic as string, [
+            { key: row.key as string, value: payloadStr }
+          ]);
+          
+          await db.updateTable('outbox')
+            .set({ processed_at: sql<Date>`now()` })
+            .where('id', '=', row.id)
+            .execute();
+            
+          console.log(`[Outbox] Flushed message ${row.id} to ${row.topic}`);
+        } catch (err) {
+          console.error(`[Outbox] Failed to flush message ${row.id} to ${row.topic}`, err);
+        }
+      }
+    } catch (e) {
+      console.error(`[Outbox] Flush operation failed`, e);
+    }
   }
+
+
+
 }

@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { sql } from 'kysely';
 import { Producer } from 'kafkajs';
 import { CatalogEvent, sendTraced } from 'shared-contracts';
 import { priceUpdateQueue } from './scheduler.js';
@@ -235,6 +236,48 @@ export class CatalogModel {
     await sendTraced(this.producer, 'orders-topic', [
       { key: orderEvent.orderId, value: JSON.stringify(sagaResponse) }
     ]);
+  }
+
+  async restoreStock(payload: any) {
+    const { orderId, items } = payload;
+    if (!items || items.length === 0) return;
+
+    try {
+      const updatedProducts: CatalogEvent[] = [];
+      await db.transaction().execute(async (trx) => {
+        for (const item of items) {
+          const res = await trx.updateTable('product')
+            .set((eb) => ({
+              stock_count: sql`${eb.ref('stock_count')} + ${item.quantity}`
+            }))
+            .where('product_id', '=', item.productId)
+            .returningAll()
+            .executeTakeFirst();
+            
+          if (res) {
+            updatedProducts.push({
+              productId: res.product_id,
+              title: res.title,
+              price: parseFloat(res.price as any),
+              stockCount: parseInt(res.stock_count as any, 10),
+              description: res.description ?? undefined,
+              thumbnail: res.thumbnail,
+              image: res.image,
+              isDeleted: !!res.deleted_at,
+              eventType: 'CATALOG_UPDATE_END'
+            });
+          }
+        }
+      });
+      console.log(`[CatalogModel] Compensating Transaction: Restored stock for cancelled order ${orderId}`);
+      
+      // Emit updates to sync Redis view
+      for (const prod of updatedProducts) {
+        await this.emitEvent(prod);
+      }
+    } catch (e: any) {
+      console.error(`[CatalogModel] Failed to restore stock for order ${orderId}`, e);
+    }
   }
 
   private async emitEvent(event: CatalogEvent) {

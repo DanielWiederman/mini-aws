@@ -41,7 +41,10 @@ graph TD
 
 ## 🚀 Key Technical Highlights
 
-* **Event-Driven Architecture:** Microservices communicate entirely asynchronously via Apache Kafka. Business logic is executed through decoupled commands and events (Sagas).
+* **Event-Driven Architecture:** Microservices communicate entirely asynchronously via Apache Kafka. Business logic is executed through decoupled commands and events.
+* **Choreography-based Sagas:** Distributed transactions span multiple microservices without a central orchestrator. Complex workflows (like stock reservation & customer validation) run in parallel, and failures gracefully trigger **Compensating Transactions** to ensure eventual consistency.
+* **Transactional Outbox Pattern:** Guarantees 100% reliable messaging. Kafka events are atomically saved to an outbox table within the same PostgreSQL transaction as the state updates, preventing dual-write split-brain issues. A background relay ensures messages are safely published even if a pod crashes mid-request.
+* **Idempotent Consumers:** Cross-service message consumers utilize atomic Redis `SET NX` operations to enforce idempotency. Duplicate Kafka deliveries due to network retries or process crashes are safely ignored, strictly preventing catastrophic errors like double-charging or duplicate stock deductions.
 * **CQRS Pattern:** Write operations (Commands) are handled by individual microservices, while Read operations (Queries) are served from a single, pre-aggregated materialized view in Redis.
 * **Real-Time Data Syncing:** A dedicated WebSocket microservice subscribes to a Redis Pub/Sub channel. Whenever the CQRS engine updates a materialized view, the update is instantly pushed to the Next.js and React frontends without HTTP polling.
 * **Distributed Tracing:** Fully instrumented with OpenTelemetry and Jaeger. Every API request and asynchronous Kafka message is traced across the entire microservice ecosystem, providing deep observability into saga executions and latency.
@@ -80,4 +83,4 @@ graph TD
    * Storefront: `http://localhost:3001`
    * Management Dashboard: `http://localhost:5178`
    * API Gateway: `http://localhost:3000`
-   * Jaeger: `http://localhost:16686` 
+   * Jaeger: `http://localhost:16686`

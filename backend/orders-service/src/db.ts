@@ -20,9 +20,20 @@ export interface OrderItemTable {
   quantity: number;
 }
 
+export interface OutboxTable {
+  id: import('kysely').Generated<number>;
+  topic: string;
+  key: string | null;
+  payload: any;
+  event_id: string | null;
+  created_at: import('kysely').Generated<Date>;
+  processed_at: Date | null;
+}
+
 export interface Database {
   order: OrderTable;
   order_item: OrderItemTable;
+  outbox: OutboxTable;
 }
 
 const pool = new Pool({

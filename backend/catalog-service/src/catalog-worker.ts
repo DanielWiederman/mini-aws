@@ -4,6 +4,7 @@ import { CatalogModel } from './catalog-model.js';
 import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, tracedEachMessage } from 'shared-contracts';
 import { sql } from 'kysely';
 import { initScheduler, priceUpdateQueue } from './scheduler.js';
+import Redis from 'ioredis';
 
 const kafka = new Kafka({
   clientId: 'catalog-service-worker',
@@ -13,6 +14,7 @@ const kafka = new Kafka({
 const consumer = kafka.consumer({ groupId: 'catalog-service-group' });
 const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
 const catalogModel = new CatalogModel(producer);
+const redis = new Redis('redis://localhost:6379');
 
 async function initDB() {
   await db.schema
@@ -90,6 +92,15 @@ async function start() {
       
       if (topic === 'orders-topic') {
         const event = JSON.parse(message.value.toString());
+        
+        // Idempotency check
+        const eventId = `${event.eventType}:${event.orderId}`;
+        const alreadySeen = await redis.set(`idem:catalog:${eventId}`, '1', 'EX', 86400, 'NX');
+        if (!alreadySeen) {
+          console.log(`📦 [Idempotency] Skipping duplicate event: ${eventId}`);
+          return;
+        }
+
         if (event.eventType === 'ORDER_PENDING_END') {
           console.log(`📦 [Catalog Worker] Received PENDING order ${event.orderId}. Attempting stock reservation...`);
           await catalogModel.handleOrderPending(event);
@@ -131,6 +142,17 @@ async function start() {
           }
           case 'SCHEDULE_PRICE_UPDATE_COMMAND': {
             await catalogModel.schedulePriceUpdate(command.payload);
+            break;
+          }
+          case 'RESTORE_STOCK_COMMAND': {
+            const payload = command.payload as any;
+            const eventId = `RESTORE_STOCK_COMMAND:${payload.orderId}`;
+            const alreadySeen = await redis.set(`idem:catalog:${eventId}`, '1', 'EX', 86400, 'NX');
+            if (!alreadySeen) {
+              console.log(`📦 [Idempotency] Skipping duplicate command: ${eventId}`);
+              break;
+            }
+            await catalogModel.restoreStock(command.payload);
             break;
           }
           default:

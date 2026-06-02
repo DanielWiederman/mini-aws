@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "bullmq": "^5.77.6",
+    "ioredis": "^5.11.0",
     "kafkajs": "^2.2.4",
     "kysely": "^0.29.2",
     "pg": "^8.21.0",

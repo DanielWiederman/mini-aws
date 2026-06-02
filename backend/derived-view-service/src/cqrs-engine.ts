@@ -103,6 +103,14 @@ async function startCqrsEngine() {
         if (!rawOrder.eventType?.endsWith('_END')) return;
         if (['STOCK_RESERVED_END', 'STOCK_DENIED_END', 'CUSTOMER_VALIDATED_END', 'CUSTOMER_INVALID_END'].includes(rawOrder.eventType)) return;
         
+        // Idempotency check
+        const eventId = `${rawOrder.eventType}:${rawOrder.orderId}`;
+        const alreadySeen = await redis.set(`idem:cqrs:${eventId}`, '1', 'EX', 86400, 'NX');
+        if (!alreadySeen) {
+          console.log(`📊 [Idempotency] Skipping duplicate event: ${eventId}`);
+          return;
+        }
+        
         // 1. Fetch details from LMDB synchronously (Blazing fast reads)
         const customerProfile = customerTable.get(rawOrder.customerId!) as CustomerEvent | undefined;
         const customerName = customerProfile ? `${customerProfile.firstName} ${customerProfile.lastName}` : 'Unknown Customer';
