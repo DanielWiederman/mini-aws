@@ -50,8 +50,14 @@ graph TD
 * **High-Performance Full-Text Search:** Powered by RediSearch and Redis JSON. The API Gateway utilizes inverted indexes and prefix matching (`FT.SEARCH`) to provide blazing-fast, sortable catalog search capabilities directly from the read models.
 * **API Rate Limiting:** An atomic Token Bucket rate limiting algorithm is executed directly in the stateless API Gateway via a custom Redis Lua Script. This protects public endpoints from burst traffic while gracefully handling capacity and token refill rates. Authenticated admin roles dynamically bypass these restrictions.
 * **Distributed Tracing:** Fully instrumented with OpenTelemetry and Jaeger. Every API request and asynchronous Kafka message is traced across the entire microservice ecosystem, providing deep observability into saga executions and latency.
+* **Centralized System Logging:** A dedicated `logs-service` acts as a centralized sink for all diagnostic logging. Microservices use a `KafkaLogger` to emit fire-and-forget logs into a shared Kafka topic (`system-logs-topic`), which are then aggregated into a central PostgreSQL database. A background worker ensures the database is automatically pruned using a rolling FIFO retention policy (5,000 logs max) to prevent storage bloat.
 * **High-Performance Local State:** Microservices utilize LMDB for ultra-fast, zero-copy local state processing before emitting final events.
 * **Stateless API Gateway:** The API Gateway holds zero state and maintains no persistent socket connections, allowing it to be elastically scaled behind an Application Load Balancer (e.g., AWS ECS/Fargate).
+
+### Transactional Outbox vs Centralized Logging
+While both patterns utilize Kafka, they serve fundamentally different purposes and happily co-exist within the architecture:
+- **Transactional Outbox (Write-Ahead Log):** Ensures **Eventual Consistency** and **Reliable Messaging**. Critical business events (like `ORDER_CREATED`) are atomically saved to the database alongside state changes. A background relayer polls this table and guarantees these events reach Kafka, preventing split-brain issues even if a pod crashes mid-request.
+- **Centralized Logging (CloudWatch Mockup):** Dedicated entirely to **Observability** and **Diagnostics**. Diagnostic messages (e.g., "Saga started") are shipped asynchronously to a central aggregation database in a fire-and-forget manner. This provides a searchable audit trail of system health without blocking or adding latency to the main business logic.
 
 ## 🛠️ Tech Stack
 

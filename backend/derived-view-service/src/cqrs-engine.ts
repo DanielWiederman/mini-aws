@@ -164,7 +164,7 @@ async function startCqrsEngine() {
         }
         
         // 1. Fetch details from LMDB synchronously (Blazing fast reads)
-        const customerProfile = customerTable.get(rawOrder.customerId!) as CustomerEvent | undefined;
+        const customerProfile = rawOrder.customerId ? (customerTable.get(rawOrder.customerId) as CustomerEvent | undefined) : undefined;
         const customerName = customerProfile ? `${customerProfile.firstName} ${customerProfile.lastName}` : 'Unknown Customer';
         const customerTier = customerProfile ? customerProfile.tier : 'STANDARD';
 

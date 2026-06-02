@@ -124,7 +124,7 @@ export class CustomerModel {
         console.log(`[CustomerModel] Validation FAILED (Not Found) for customer ${orderEvent.customerId}`);
       }
     } catch (e: any) {
-      this.sysLogger.error(`Customer Validation Failed: ${orderEvent.customerId} failed due to ${e.message}`).catch(() => {});
+      this.sysLogger.error(`Customer Validation Failed: ${orderEvent.customerId} failed due to ${e.message}`, e).catch(() => {});
       console.log(`[CustomerModel] Validation failed for customer ${orderEvent.customerId}: ${e.message}`);
     }
     

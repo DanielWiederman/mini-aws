@@ -1,5 +1,6 @@
 import { Producer } from 'kafkajs';
 import { sendTraced } from './kafka-tracing.js';
+import { redactPII } from './utils.js';
 
 export interface LogEvent {
   level: 'INFO' | 'WARN' | 'ERROR';
@@ -34,7 +35,7 @@ export class KafkaLogger {
         message,
         error: error?.message || (typeof error === 'string' ? error : undefined),
         stack: error?.stack,
-        metadata,
+        metadata: redactPII(metadata),
         timestamp: new Date().toISOString()
       };
 

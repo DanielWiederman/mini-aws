@@ -226,7 +226,7 @@ export class CatalogModel {
       }
     } catch (e: any) {
       success = false;
-      this.sysLogger.error(`Stock Denied: Order ${orderEvent.orderId} failed due to ${e.message}`).catch(() => {});
+      this.sysLogger.error(`Stock Denied: Order ${orderEvent.orderId} failed due to ${e.message}`, e).catch(() => {});
       console.log(`[CatalogModel] Stock reservation denied for ${orderEvent.orderId}: ${e.message}`);
     }
     

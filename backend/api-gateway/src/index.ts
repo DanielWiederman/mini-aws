@@ -104,7 +104,7 @@ app.post('/api/customers', async (req, res) => {
       value: JSON.stringify(command)
     }]);
 
-    sysLogger.info(`Accepted customer creation command for ${payload.customerId}`).catch(() => {});
+    sysLogger.info(`Accepted customer creation command for ${payload.customerId}`, payload).catch(() => {});
     const responseData = { message: 'Customer creation accepted', customerId: payload.customerId };
     
     const idempotencyKey = req.header('Idempotency-Key') as string;
@@ -113,6 +113,7 @@ app.post('/api/customers', async (req, res) => {
     res.status(202).json(responseData);
   } catch (err) {
     console.error(err);
+    sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -153,6 +154,7 @@ app.post('/api/customers/login', async (req, res) => {
 
   } catch (err) {
     console.error(err);
+    sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -195,6 +197,7 @@ app.post('/api/customers/:id/tier', async (req, res) => {
     res.status(202).json(responseData);
   } catch (err) {
     console.error(err);
+    sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -304,7 +307,7 @@ app.post('/api/catalog', async (req, res) => {
       { key: payload.productId, value: JSON.stringify(command) }
     ]);
 
-    sysLogger.info(`Accepted product creation command for ${payload.productId}`).catch(() => {});
+    sysLogger.info(`Accepted product creation command for ${payload.productId}`, payload).catch(() => {});
     console.log(`[API Gateway] Published CREATE_PRODUCT_START for ${payload.productId}`);
     const responseData = { message: 'Product creation accepted', productId: payload.productId };
     
@@ -314,6 +317,7 @@ app.post('/api/catalog', async (req, res) => {
     res.status(202).json(responseData);
   } catch (err) {
     console.error(err);
+    sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -341,7 +345,7 @@ app.post('/api/catalog/:id/price', async (req, res) => {
       { key: productId, value: JSON.stringify(command) }
     ]);
 
-    sysLogger.info(`Accepted scheduled price update command for ${productId}`).catch(() => {});
+    sysLogger.info(`Accepted scheduled price update command for ${productId}`, { productId, newPrice: price }).catch(() => {});
     console.log(`[API Gateway] Published UPDATE_PRICE_START for ${productId}`);
     
     const responseData = { message: 'Price update accepted', productId };
@@ -351,6 +355,7 @@ app.post('/api/catalog/:id/price', async (req, res) => {
     res.status(202).json(responseData);
   } catch (err) {
     console.error(err);
+    sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -575,7 +580,7 @@ app.post('/api/orders', async (req, res) => {
       { key: payload.orderId, value: JSON.stringify(command) }
     ]);
 
-    sysLogger.info(`Accepted order creation command for ${payload.orderId} (Customer: ${payload.customerId})`).catch(() => {});
+    sysLogger.info(`Accepted order creation command for ${payload.orderId} (Customer: ${payload.customerId})`, payload).catch(() => {});
     console.log(`[API Gateway] Published CREATE_ORDER_START for ${payload.orderId}`);
     const responseData = { message: 'Order creation accepted', orderId: payload.orderId };
     
@@ -585,6 +590,7 @@ app.post('/api/orders', async (req, res) => {
     res.status(202).json(responseData);
   } catch (err) {
     console.error(err);
+    sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
