@@ -83,6 +83,21 @@ app.post('/api/customers/login', async (req, res) => {
       return res.status(400).json({ error: 'Missing email or password' });
     }
 
+    // --- Redis Fixed Window Rate Limiting ---
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const rateLimitKey = `ratelimit:login:${ip}`;
+    
+    const attempts = await redis.incr(rateLimitKey);
+    if (attempts === 1) {
+      // 10 second window
+      await redis.expire(rateLimitKey, 10);
+    }
+
+    if (attempts > 5) {
+      return res.status(429).json({ error: 'Too many login attempts from this IP. Please try again later.' });
+    }
+    // ----------------------------------------
+
     const authStr = await redis.hget('auth_view', email);
     if (!authStr) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -448,6 +463,17 @@ app.post('/api/orders', async (req, res) => {
     if (!payload.orderId || !payload.customerId || !payload.items || !Array.isArray(payload.items)) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    // --- Redis Fixed Window Rate Limiting (by Customer ID) ---
+    const rateLimitKey = `ratelimit:orders:${payload.customerId}`;
+    const attempts = await redis.incr(rateLimitKey);
+    if (attempts === 1) {
+      await redis.expire(rateLimitKey, 10); // 10 second window
+    }
+    if (attempts > 5) {
+      return res.status(429).json({ error: 'Too many orders placed recently. Please try again later.' });
+    }
+    // ---------------------------------------------------------
 
     const command: OrderCommand = {
       commandType: 'CREATE_ORDER_START',
