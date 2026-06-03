@@ -33,6 +33,9 @@ export interface Database {
 
 export const pool = new Pool({
   connectionString: 'postgres://postgres:postgres@localhost:5433/customers_db',
+  max: 50,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000
 });
 
 const dialect = new PostgresDialect({ pool });

@@ -561,6 +561,12 @@ app.post('/api/orders', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Global orders rate limit: 300 req/sec across all customers
+    const globalAllowed = await checkRateLimit('ratelimit:orders:global', 300, 300);
+    if (!globalAllowed) {
+      return res.status(429).json({ error: 'System order capacity exceeded. Try again shortly.' });
+    }
+
     // --- Redis Token Bucket Rate Limiting (by Customer ID) ---
     const rateLimitKey = `ratelimit:orders:${payload.customerId}`;
     // Capacity 5, Refill Rate: 0.5 tokens/sec
@@ -580,7 +586,6 @@ app.post('/api/orders', async (req, res) => {
     ]);
 
     sysLogger.info(`Accepted order creation command for ${payload.orderId} (Customer: ${payload.customerId})`, payload).catch(() => {});
-    console.log(`[API Gateway] Published CREATE_ORDER_START for ${payload.orderId}`);
     const responseData = { message: 'Order creation accepted', orderId: payload.orderId };
     
     const idempotencyKey = req.header('Idempotency-Key') as string;

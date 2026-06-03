@@ -21,7 +21,9 @@ const dialect = new PostgresDialect({
     user: 'user',
     password: 'password',
     port: 5436, // Note the port for logs-db
-    max: 10,
+    max: 50,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000
   })
 });
 

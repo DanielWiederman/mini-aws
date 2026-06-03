@@ -22,7 +22,7 @@ async function startWorker() {
   const customerModel = new CustomerModel(producer, sysLogger);
 
   await consumer.subscribe({ topic: 'customer-commands-topic', fromBeginning: false });
-  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: true });
+  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: false });
 
   console.log('🎧 Listening for Commands on customer-commands-topic and orders-topic...');
 
@@ -55,6 +55,15 @@ async function startWorker() {
       }
     }),
   });
+
+  const shutdown = async () => {
+    console.log('👥 [Customers Worker] Shutting down gracefully...');
+    await consumer.disconnect();
+    await producer.disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startWorker().catch(console.error);

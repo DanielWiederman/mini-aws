@@ -83,8 +83,8 @@ async function start() {
   await producer.connect();
   await consumer.connect();
   
-  await consumer.subscribe({ topic: 'catalog-commands-topic', fromBeginning: true });
-  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: true });
+  await consumer.subscribe({ topic: 'catalog-commands-topic', fromBeginning: false });
+  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: false });
   console.log('📦 [Catalog Worker] Listening for commands and saga orders');
 
   await consumer.run({
@@ -167,6 +167,16 @@ async function start() {
 
   initScheduler(catalogModel);
   await syncScheduledUpdates();
+
+  const shutdown = async () => {
+    console.log('📦 [Catalog Worker] Shutting down gracefully...');
+    await redis.quit();
+    await consumer.disconnect();
+    await producer.disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 start().catch(console.error);

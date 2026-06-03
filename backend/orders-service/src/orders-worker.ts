@@ -6,10 +6,14 @@ import { OrderCommand, CreateOrderCommandPayload, OrderEvent, tracedEachMessage,
 
 const kafka = new Kafka({
   clientId: 'orders-service-worker',
-  brokers: ['localhost:9092']
+  brokers: ['localhost:9092'],
+  allowAutoTopicCreation: false
 });
 
-const consumer = kafka.consumer({ groupId: 'orders-service-group' });
+const consumer = kafka.consumer({ 
+  groupId: 'orders-service-group',
+  maxInFlightRequests: 30
+});
 const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
 const sysLogger = new KafkaLogger(producer, 'orders-service');
 const ordersModel = new OrdersModel(producer, sysLogger);
@@ -58,8 +62,8 @@ async function start() {
   await consumer.connect();
   
   // Listen to BOTH commands from gateway and saga responses from other services
-  await consumer.subscribe({ topic: 'orders-commands-topic', fromBeginning: true });
-  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: true });
+  await consumer.subscribe({ topic: 'orders-commands-topic', fromBeginning: false });
+  await consumer.subscribe({ topic: 'orders-topic', fromBeginning: false });
   console.log('🛒 [Orders Worker] Listening for commands and saga responses');
 
   await consumer.run({
@@ -88,13 +92,23 @@ async function start() {
   });
 
   // Outbox Polling Relay for Crash Recovery
-  setInterval(async () => {
+  const intervalId = setInterval(async () => {
     try {
       await ordersModel.flushOutbox();
     } catch (e) {
       console.error('🛒 [Outbox Relay] Error during outbox sweep', e);
     }
   }, 5000);
+
+  const shutdown = async () => {
+    console.log('🛒 [Orders Worker] Shutting down gracefully...');
+    clearInterval(intervalId);
+    await consumer.disconnect();
+    await producer.disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 start().catch(console.error);

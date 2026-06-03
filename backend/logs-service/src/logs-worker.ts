@@ -34,7 +34,7 @@ async function initDb() {
 async function run() {
   let logsCount = await initDb();
   await consumer.connect();
-  await consumer.subscribe({ topic: 'system-logs-topic', fromBeginning: true });
+  await consumer.subscribe({ topic: 'system-logs-topic', fromBeginning: false });
   
   console.log('📝 [Logs Worker] Listening for logs on system-logs-topic...');
 
@@ -74,6 +74,14 @@ async function run() {
       }
     },
   });
+
+  const shutdown = async () => {
+    console.log('📝 [Logs Worker] Shutting down gracefully...');
+    await consumer.disconnect();
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 run().catch(console.error);

@@ -41,7 +41,10 @@ const pool = new Pool({
   port: 5435, // Dedicated orders-db
   user: 'postgres',
   password: 'postgres',
-  database: 'orders_db'
+  database: 'orders_db',
+  max: 50,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000
 });
 
 export const db = new Kysely<Database>({

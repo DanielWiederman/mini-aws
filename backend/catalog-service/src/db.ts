@@ -33,7 +33,10 @@ const pool = new Pool({
   port: 5434,
   user: 'postgres',
   password: 'postgres',
-  database: 'catalog_db'
+  database: 'catalog_db',
+  max: 50,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000
 });
 
 export const db = new Kysely<Database>({
