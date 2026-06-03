@@ -2,6 +2,18 @@
 
 This repository showcases a highly scalable, event-driven e-commerce platform that simulates AWS-grade microservices architecture. It demonstrates modern backend patterns, including **Event Sourcing**, **CQRS** (Command Query Responsibility Segregation), and **Real-Time WebSockets**, all built using Node.js and TypeScript.
 
+## 💡 What Problem Does This Project Solve?
+
+When an application grows, a **monolith** (one server that does everything) becomes a liability: every deploy risks breaking unrelated features, a single failure can take down the entire system, and you can only scale everything even when only one part is under load. This project simulates the solution companies like Amazon and Netflix adopted:
+
+- **Deployment independence** — each service deploys on its own without affecting others
+- **Failure isolation** — a crash in one service does not bring down the rest of the system
+- **Scale where needed** — scale only the bottleneck, not the entire application
+- **Data consistency without distributed locks** — Sagas + Transactional Outbox guarantee consistency across separate databases without a two-phase commit
+- **Query performance at scale** — CQRS pre-computes answers into Redis so reads are O(1) lookups with no expensive JOINs
+
+> **In one sentence:** This architecture solves the scalability, reliability, and team autonomy problems that emerge when a business grows beyond what a single server can handle.
+
 ## 🏗️ System Architecture
 
 The entire system is decoupled. The API Gateway acts as a stateless entry point, passing commands into an Apache Kafka event stream. Specialized microservices handle the business logic and emit events back to Kafka. Finally, a CQRS engine aggregates these events into lightning-fast materialized views stored in Redis, which are synced to clients in real-time via WebSockets and Redis Pub/Sub.
