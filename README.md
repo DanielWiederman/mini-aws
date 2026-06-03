@@ -99,6 +99,7 @@ flowchart TD
 * **Centralized System Logging:** A dedicated `logs-service` acts as a centralized sink for all diagnostic logging. Microservices use a `KafkaLogger` to emit fire-and-forget logs into a shared Kafka topic (`system-logs-topic`), which are then aggregated into a central PostgreSQL database. A background worker ensures the database is automatically pruned using a rolling FIFO retention policy (5,000 logs max) to prevent storage bloat.
 * **High-Performance Distributed State:** Microservices utilize Redis hash sets for ultra-fast, distributed local state processing and data joins before emitting final events.
 * **Stateless API Gateway:** The API Gateway holds zero state and maintains no persistent socket connections, allowing it to be elastically scaled behind an Application Load Balancer (e.g., AWS ECS/Fargate).
+* **Circuit Breaker:** The API Gateway is protected against Kafka outages via a Circuit Breaker with three states (CLOSED, OPEN, HALF_OPEN). After 5 consecutive Kafka failures, the circuit opens and all publish attempts immediately return 503, preventing request pile-up. After 30 seconds the circuit enters HALF_OPEN to probe recovery.
 
 ### Transactional Outbox vs Centralized Logging
 While both patterns utilize Kafka, they serve fundamentally different purposes and happily co-exist within the architecture:

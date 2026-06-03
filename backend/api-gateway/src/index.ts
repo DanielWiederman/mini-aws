@@ -15,6 +15,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
+import { CircuitBreaker, CircuitOpenError } from './circuit-breaker.js';
+
+const kafkaBreaker = new CircuitBreaker();
 
 const app = express();
 app.use(express.json());
@@ -106,10 +109,10 @@ app.post('/api/customers', async (req, res) => {
       payload
     };
 
-    await sendTraced(producer, 'customer-commands-topic', [{
+    await kafkaBreaker.call(() => sendTraced(producer, 'customer-commands-topic', [{
       key: payload.customerId,
       value: JSON.stringify(command)
-    }]);
+    }]));
 
     sysLogger.info(`Accepted customer creation command for ${payload.customerId}`, payload).catch(() => {});
     const responseData = { message: 'Customer creation accepted', customerId: payload.customerId };
@@ -118,7 +121,10 @@ app.post('/api/customers', async (req, res) => {
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
     console.error(err);
     sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
@@ -190,10 +196,10 @@ app.post('/api/customers/:id/tier', async (req, res) => {
       payload
     };
 
-    await sendTraced(producer, 'customer-commands-topic', [{
+    await kafkaBreaker.call(() => sendTraced(producer, 'customer-commands-topic', [{
       key: customerId,
       value: JSON.stringify(command)
-    }]);
+    }]));
 
     const responseData = { message: 'Tier upgrade accepted', customerId };
     
@@ -201,7 +207,10 @@ app.post('/api/customers/:id/tier', async (req, res) => {
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
     console.error(err);
     sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
@@ -249,14 +258,18 @@ app.post('/api/admins', requireSuperAdmin, async (req, res) => {
     payload.role = 'ADMIN';
 
     const command: CustomerCommand = { commandType: 'CREATE_CUSTOMER_COMMAND', payload };
-    await sendTraced(producer, 'customer-commands-topic', [{ key: payload.customerId, value: JSON.stringify(command) }]);
+    await kafkaBreaker.call(() => sendTraced(producer, 'customer-commands-topic', [{ key: payload.customerId, value: JSON.stringify(command) }]));
 
     const responseData = { message: 'Admin creation accepted', customerId: payload.customerId };
     const idempotencyKey = req.header('Idempotency-Key') as string;
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
+    console.error(err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -309,9 +322,9 @@ app.post('/api/catalog', async (req, res) => {
       payload: sanitizedPayload
     };
 
-    await sendTraced(producer, 'catalog-commands-topic', [
+    await kafkaBreaker.call(() => sendTraced(producer, 'catalog-commands-topic', [
       { key: payload.productId, value: JSON.stringify(command) }
-    ]);
+    ]));
 
     sysLogger.info(`Accepted product creation command for ${payload.productId}`, payload).catch(() => {});
     console.log(`[API Gateway] Published CREATE_PRODUCT_START for ${payload.productId}`);
@@ -321,7 +334,10 @@ app.post('/api/catalog', async (req, res) => {
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
     console.error(err);
     sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
@@ -347,9 +363,9 @@ app.post('/api/catalog/:id/price', async (req, res) => {
       payload
     };
 
-    await sendTraced(producer, 'catalog-commands-topic', [
+    await kafkaBreaker.call(() => sendTraced(producer, 'catalog-commands-topic', [
       { key: productId, value: JSON.stringify(command) }
-    ]);
+    ]));
 
     sysLogger.info(`Accepted scheduled price update command for ${productId}`, { productId, newPrice: price }).catch(() => {});
     console.log(`[API Gateway] Published UPDATE_PRICE_START for ${productId}`);
@@ -359,7 +375,10 @@ app.post('/api/catalog/:id/price', async (req, res) => {
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
     console.error(err);
     sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
@@ -373,14 +392,18 @@ app.put('/api/catalog/:id', requireAdmin, async (req, res) => {
     payload.productId = productId;
     
     const command: CatalogCommand = { commandType: 'UPDATE_PRODUCT_START', payload };
-    await sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]);
+    await kafkaBreaker.call(() => sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]));
 
     const responseData = { message: 'Product update accepted', productId };
     const idempotencyKey = req.header('Idempotency-Key') as string;
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
+    console.error(err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -389,14 +412,18 @@ app.delete('/api/catalog/:id', requireAdmin, async (req, res) => {
   try {
     const productId = req.params.id;
     const command: CatalogCommand = { commandType: 'DELETE_PRODUCT_START', payload: { productId } as any };
-    await sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]);
+    await kafkaBreaker.call(() => sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]));
 
     const responseData = { message: 'Product deletion accepted', productId };
     const idempotencyKey = req.header('Idempotency-Key') as string;
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
+    console.error(err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -415,14 +442,18 @@ app.post('/api/catalog/:id/price-schedule', requireAdmin, async (req, res) => {
       payload: { productId, newPrice, triggerAt } as any 
     };
     
-    await sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]);
+    await kafkaBreaker.call(() => sendTraced(producer, 'catalog-commands-topic', [{ key: productId, value: JSON.stringify(command) }]));
 
     const responseData = { message: 'Price schedule accepted', productId };
     const idempotencyKey = req.header('Idempotency-Key') as string;
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
+    console.error(err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -588,9 +619,9 @@ app.post('/api/orders', async (req, res) => {
       payload
     };
 
-    await sendTraced(producer, 'orders-commands-topic', [
+    await kafkaBreaker.call(() => sendTraced(producer, 'orders-commands-topic', [
       { key: payload.orderId, value: JSON.stringify(command) }
-    ]);
+    ]));
 
     sysLogger.info(`Accepted order creation command for ${payload.orderId} (Customer: ${payload.customerId})`, payload).catch(() => {});
     const responseData = { message: 'Order creation accepted', orderId: payload.orderId };
@@ -599,7 +630,10 @@ app.post('/api/orders', async (req, res) => {
     await idempotencyDb.put(idempotencyKey, responseData);
     
     res.status(202).json(responseData);
-  } catch (err) {
+  } catch (err: any) {
+    if (err instanceof CircuitOpenError) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. Please try again shortly.' });
+    }
     console.error(err);
     sysLogger.error('API Gateway Error', err).catch(() => {});
     res.status(500).json({ error: 'Internal Server Error' });
@@ -692,6 +726,10 @@ app.get('/api/orders', requireAdmin, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch orders' });
   }
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', kafkaCircuit: kafkaBreaker.getState() });
 });
 
 async function start() {
