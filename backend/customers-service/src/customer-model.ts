@@ -118,14 +118,11 @@ export class CustomerModel {
       
       if (success) {
         this.sysLogger.info(`Customer Validated: ${orderEvent.customerId} is valid for order ${orderEvent.orderId}`).catch(() => {});
-        console.log(`[CustomerModel] Validated customer ${orderEvent.customerId} for order ${orderEvent.orderId}`);
       } else {
         this.sysLogger.error(`Customer Invalid: ${orderEvent.customerId} not found for order ${orderEvent.orderId}`).catch(() => {});
-        console.log(`[CustomerModel] Validation FAILED (Not Found) for customer ${orderEvent.customerId}`);
       }
     } catch (e: any) {
       this.sysLogger.error(`Customer Validation Failed: ${orderEvent.customerId} failed due to ${e.message}`, e).catch(() => {});
-      console.log(`[CustomerModel] Validation failed for customer ${orderEvent.customerId}: ${e.message}`);
     }
     
     const sagaResponse = {
@@ -143,6 +140,5 @@ export class CustomerModel {
     await sendTraced(this.producer, 'customer-topic', [
       { key: event.customerId, value: JSON.stringify(event) }
     ]);
-    console.log(`[Kafka] Emitted ${event.eventType} for ${event.customerId}`);
   }
 }

@@ -188,7 +188,6 @@ app.post('/api/customers/:id/tier', async (req, res) => {
       value: JSON.stringify(command)
     }]);
 
-    console.log(`[API Gateway] Published UPGRADE_TIER_COMMAND for ${customerId}`);
     const responseData = { message: 'Tier upgrade accepted', customerId };
     
     const idempotencyKey = req.header('Idempotency-Key') as string;

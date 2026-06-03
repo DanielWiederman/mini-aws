@@ -60,8 +60,6 @@ async function run() {
 
         if (logEvent.level === 'ERROR') {
           console.error(`🚨 [Log DB Sink] Recorded ERROR from ${logEvent.service}: ${logEvent.message}`);
-        } else {
-          console.log(`ℹ️ [Log DB Sink] Recorded ${logEvent.level} from ${logEvent.service}`);
         }
 
         logsCount++;

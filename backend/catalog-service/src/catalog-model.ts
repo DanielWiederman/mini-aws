@@ -218,7 +218,6 @@ export class CatalogModel {
         }
       });
       this.sysLogger.info(`Stock Reserved: Order ${orderEvent.orderId} reserved items successfully`).catch(() => {});
-      console.log(`[CatalogModel] Reserved stock for order ${orderEvent.orderId}`);
       
       // Emit updates to sync Redis view
       for (const prod of updatedProducts) {
@@ -227,7 +226,6 @@ export class CatalogModel {
     } catch (e: any) {
       success = false;
       this.sysLogger.error(`Stock Denied: Order ${orderEvent.orderId} failed due to ${e.message}`, e).catch(() => {});
-      console.log(`[CatalogModel] Stock reservation denied for ${orderEvent.orderId}: ${e.message}`);
     }
     
     const sagaResponse = {
@@ -272,7 +270,6 @@ export class CatalogModel {
         }
       });
       this.sysLogger.warn(`Compensating Transaction: Restored stock for cancelled order ${orderId}`).catch(() => {});
-      console.log(`[CatalogModel] Compensating Transaction: Restored stock for cancelled order ${orderId}`);
       
       // Emit updates to sync Redis view
       for (const prod of updatedProducts) {
@@ -287,6 +284,5 @@ export class CatalogModel {
     await sendTraced(this.producer, 'catalog-topic', [
       { key: event.productId, value: JSON.stringify(event) }
     ]);
-    console.log(`[Kafka] Emitted ${event.eventType} for ${event.productId}`);
   }
 }

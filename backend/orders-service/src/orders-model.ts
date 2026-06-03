@@ -44,7 +44,6 @@ export class OrdersModel {
       
       await this.flushOutbox(payload.orderId);
       this.sysLogger.info(`Saga Started: PENDING order ${payload.orderId} created`).catch(() => {});
-      console.log(`[OrdersModel] Created PENDING order ${payload.orderId}. Flushed ORDER_PENDING_END to outbox`);
     } catch (e) {
       console.error('Failed to create pending order', e);
       throw e;
@@ -190,8 +189,6 @@ export class OrdersModel {
             .set({ processed_at: sql<Date>`now()` })
             .where('id', '=', row.id)
             .execute();
-            
-          console.log(`[Outbox] Flushed message ${row.id} to ${row.topic}`);
         } catch (err) {
           console.error(`[Outbox] Failed to flush message ${row.id} to ${row.topic}`, err);
         }

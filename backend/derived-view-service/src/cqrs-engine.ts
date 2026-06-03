@@ -216,7 +216,11 @@ async function startCqrsEngine() {
 }
 
 // Helper to keep the terminal beautifully rendering our live dashboard
+let lastDashboardUpdate = 0;
 function updateDashboard(latestEventLog: string) {
+  const now = Date.now();
+  if (now - lastDashboardUpdate < 2000) return;
+  lastDashboardUpdate = now;
   console.clear();
   console.log("==========================================================================");
   console.log("⚡ AWS-STYLE ARCHITECTURE MOCKUP: CQRS MATERIALIZED VIEW STREAM ⚡");
