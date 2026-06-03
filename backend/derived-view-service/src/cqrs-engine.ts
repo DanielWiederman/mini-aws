@@ -127,6 +127,7 @@ async function startCqrsEngine() {
         }
         
         updateDashboard(isNew ? `New Customer: ${customer.firstName}` : `Tier Upgraded: ${customer.firstName} -> ${customer.tier}`);
+        await patchStaleOrders('customer', customer);
       }
 
       // ROUTE 2: Maintain the Catalog local state table (Live price tracking)
@@ -146,6 +147,7 @@ async function startCqrsEngine() {
           await redis.call('JSON.SET', `catalog:${catalog.productId}`, '$', JSON.stringify(catalog));
           await redis.publish('catalog_pubsub', JSON.stringify(catalog));
           updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
+          await patchStaleOrders('catalog', catalog);
         }
       }
 
@@ -196,6 +198,7 @@ async function startCqrsEngine() {
 
         const materializedOrder = {
           orderId: rawOrder.orderId,
+          customerId: rawOrder.customerId,
           status: rawOrder.status,
           customerName,
           customerTier,
@@ -216,6 +219,115 @@ async function startCqrsEngine() {
       }
     }
   });
+}
+
+async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
+  if (type === 'customer') {
+    const customer = data as CustomerEvent;
+    let offset = 0;
+    while (true) {
+      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', '@customerName:"Unknown Customer"', 'LIMIT', String(offset), '100') as any[];
+      const count = searchRes[0] as number;
+      if (count === 0) break;
+
+      for (let i = 1; i < searchRes.length; i += 2) {
+        const fields = searchRes[i+1] as string[];
+        let orderStr = null;
+        
+        const dollarIndex = fields.indexOf('$');
+        if (dollarIndex !== -1 && fields[dollarIndex + 1]) {
+          orderStr = fields[dollarIndex + 1];
+        } else if (fields.length > 0 && fields[0].startsWith('{')) {
+          orderStr = fields[0];
+        }
+        
+        if (!orderStr) continue;
+        
+        const order = JSON.parse(orderStr);
+        if (order.customerId && order.customerId !== customer.customerId) continue;
+
+        order.customerName = `${customer.firstName} ${customer.lastName}`;
+        order.customerTier = customer.tier;
+        
+        let invoiceTotal = 0;
+        for (const item of order.purchasedItems) {
+          invoiceTotal += item.totalCost;
+        }
+        if (order.customerTier === 'PREMIUM') {
+          invoiceTotal = invoiceTotal * 0.9;
+        }
+        order.invoiceTotal = parseFloat(invoiceTotal.toFixed(2));
+        
+        const payloadStr = JSON.stringify(order);
+        await redis.hset('orders_view', order.orderId, payloadStr);
+        await redis.call('JSON.SET', `order:${order.orderId}`, '$', payloadStr);
+        await redis.publish('orders_pubsub', payloadStr);
+        console.log(`📊 [Self-Heal] Patched stale customer for order ${order.orderId}`);
+      }
+      
+      offset += 100;
+      if (offset >= count) break;
+    }
+  } else if (type === 'catalog') {
+    const catalog = data as CatalogEvent;
+    let offset = 0;
+    while (true) {
+      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', '@itemTitle:"Missing Product Name"', 'LIMIT', String(offset), '100') as any[];
+      const count = searchRes[0] as number;
+      if (count === 0) break;
+
+      for (let i = 1; i < searchRes.length; i += 2) {
+        const fields = searchRes[i+1] as string[];
+        let orderStr = null;
+        
+        const dollarIndex = fields.indexOf('$');
+        if (dollarIndex !== -1 && fields[dollarIndex + 1]) {
+          orderStr = fields[dollarIndex + 1];
+        } else if (fields.length > 0 && fields[0].startsWith('{')) {
+          orderStr = fields[0];
+        }
+        
+        if (!orderStr) continue;
+        
+        const order = JSON.parse(orderStr);
+        
+        let hasMatch = false;
+        let rawInvoiceTotal = 0;
+        
+        for (const item of order.purchasedItems) {
+          if (item.productId === catalog.productId && item.title === 'Missing Product Name') {
+            hasMatch = true;
+            item.title = catalog.title;
+            const unitPrice = Number(catalog.price);
+            item.totalCost = parseFloat((unitPrice * item.qty).toFixed(2));
+            rawInvoiceTotal += (unitPrice * item.qty);
+          } else {
+            const productDetailStr = await redis.hget('lmdb:catalog', item.productId);
+            const productDetail = productDetailStr ? JSON.parse(productDetailStr as string) : undefined;
+            const unitPrice = productDetail ? Number(productDetail.price) : (item.totalCost / item.qty);
+            rawInvoiceTotal += (unitPrice * item.qty);
+          }
+        }
+        
+        if (!hasMatch) continue;
+
+        let invoiceTotal = rawInvoiceTotal;
+        if (order.customerTier === 'PREMIUM') {
+          invoiceTotal = invoiceTotal * 0.9;
+        }
+        order.invoiceTotal = parseFloat(invoiceTotal.toFixed(2));
+        
+        const payloadStr = JSON.stringify(order);
+        await redis.hset('orders_view', order.orderId, payloadStr);
+        await redis.call('JSON.SET', `order:${order.orderId}`, '$', payloadStr);
+        await redis.publish('orders_pubsub', payloadStr);
+        console.log(`📊 [Self-Heal] Patched stale catalog item for order ${order.orderId}`);
+      }
+      
+      offset += 100;
+      if (offset >= count) break;
+    }
+  }
 }
 
 // Helper to keep the terminal beautifully rendering our live dashboard
