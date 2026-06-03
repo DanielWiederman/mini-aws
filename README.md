@@ -7,45 +7,69 @@ This repository showcases a highly scalable, event-driven e-commerce platform th
 The entire system is decoupled. The API Gateway acts as a stateless entry point, passing commands into an Apache Kafka event stream. Specialized microservices handle the business logic and emit events back to Kafka. Finally, a CQRS engine aggregates these events into lightning-fast materialized views stored in Redis, which are synced to clients in real-time via WebSockets and Redis Pub/Sub.
 
 ```mermaid
-graph TD
-    %% Clients
-    Client1[Next.js Storefront] -->|HTTP Requests| Gateway[Stateless API Gateway]
-    Client2[React Admin Dashboard] -->|HTTP Requests| Gateway
-    Client1 -.->|WebSockets| WSS[WebSockets Service]
-    Client2 -.->|WebSockets| WSS
+flowchart TD
+    subgraph Clients [Frontend Applications]
+        Client1[Next.js Storefront]
+        Client2[React Admin Dashboard]
+    end
 
-    %% Gateway to Kafka
-    Gateway -->|Produces Commands| Kafka[(Apache Kafka Event Bus)]
-    
-    %% Microservices
-    Kafka -->|Consumes Commands| Orders[Orders Service]
-    Kafka -->|Consumes Commands| Catalog[Catalog Service]
-    Kafka -->|Consumes Commands| Customers[Customers Service]
+    subgraph Entrypoints [Gateways]
+        Gateway[Stateless API Gateway]
+        WSS[WebSockets Service]
+    end
 
-    %% Databases
-    Orders -->|Local State| DB1[(PostgreSQL: Orders)]
-    Catalog -->|Local State| DB2[(PostgreSQL: Catalog)]
-    Customers -->|Local State| DB3[(PostgreSQL: Customers)]
+    subgraph EventBus [Event Highway]
+        Kafka[(Apache Kafka Event Bus)]
+    end
 
-    %% Microservices to Kafka (Outbox & DLQ)
-    Orders -->|Produces Events & DLQ| Kafka
-    Catalog -->|Produces Events & DLQ| Kafka
-    Customers -->|Produces Events & DLQ| Kafka
+    subgraph Services [Core Microservices]
+        Orders[Orders Service]
+        Catalog[Catalog Service]
+        Customers[Customers Service]
+    end
+
+    subgraph Databases [Persistence]
+        DB1[(PostgreSQL: Orders)]
+        DB2[(PostgreSQL: Catalog)]
+        DB3[(PostgreSQL: Customers)]
+    end
+
+    subgraph Observability [Diagnostics]
+        LogsService[Logs Service]
+        DB4[(PostgreSQL: Logs)]
+    end
+
+    subgraph Views [Read Models]
+        CQRS[CQRS Engine]
+        Redis[(Redis Key-Value Store)]
+        RedisPubSub((Redis Pub/Sub))
+    end
+
+    %% Wiring
+    Client1 -->|HTTP| Gateway
+    Client2 -->|HTTP| Gateway
+    Client1 -.->|WS| WSS
+    Client2 -.->|WS| WSS
+
+    Gateway -->|Commands| Kafka
     
-    %% Observability
-    Kafka -->|Consumes Logs| LogsService[Logs Service]
-    LogsService -->|Persists| DB4[(PostgreSQL: Logs)]
-    
-    %% CQRS Engine
-    Kafka -->|Consumes Events| CQRS[CQRS Derived View Engine]
-    
-    %% Storage
-    CQRS -->|Writes Views & Join State| Redis[(Redis Key-Value Store)]
-    CQRS -->|Publishes Updates| RedisPubSub((Redis Pub/Sub Channel))
-    
-    %% Read Paths
-    Gateway -->|Reads Aggregated Data| Redis
-    WSS -.->|Subscribes to Updates| RedisPubSub
+    Kafka <-->|Consumes & Produces| Orders
+    Kafka <-->|Consumes & Produces| Catalog
+    Kafka <-->|Consumes & Produces| Customers
+
+    Orders --- DB1
+    Catalog --- DB2
+    Customers --- DB3
+
+    Kafka -->|Consumes Logs| LogsService
+    LogsService --- DB4
+
+    Kafka -->|Consumes Events| CQRS
+    CQRS -->|Writes State| Redis
+    CQRS -->|Publishes| RedisPubSub
+
+    Gateway -->|Reads| Redis
+    WSS -.->|Subscribes| RedisPubSub
 ```
 
 ## 🚀 Key Technical Highlights
