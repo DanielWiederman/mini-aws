@@ -14,7 +14,8 @@
     "dev:websockets": "pnpm --filter websockets-service dev",
     "typecheck": "pnpm -r typecheck",
     "build": "pnpm -r --filter !mini-aws build",
-    "test:e2e": "tsx --test backend/tests/*.e2e.ts"
+    "test:e2e": "tsx --test backend/tests/*.e2e.ts",
+    "test:stress:long": "tsx backend/tests/long-stress.ts"
   },
   "devEngines": {
     "packageManager": {
