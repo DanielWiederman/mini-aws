@@ -1,14 +1,14 @@
 import { Kafka, Consumer, Producer, Partitioners } from 'kafkajs';
 import { initDb } from './db.js';
 import { CustomerModel } from './customer-model.js';
-import { CustomerCommand, tracedEachMessage, KafkaLogger } from 'shared-contracts';
+import { CustomerCommand, tracedEachMessage, KafkaLogger, withDLQ } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'customers-service-worker',
-  brokers: ['localhost:9092']
+  brokers: [(process.env.KAFKA_BROKER || 'localhost:9092')]
 });
 
-const producer: Producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
+const producer: Producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner, allowAutoTopicCreation: true });
 const consumer: Consumer = kafka.consumer({ groupId: 'customers-worker-group' });
 
 async function startWorker() {
@@ -26,33 +26,33 @@ async function startWorker() {
 
   console.log('🎧 Listening for Commands on customer-commands-topic and orders-topic...');
 
+  const dlqRetryMap = new Map<string, number>();
+
   await consumer.run({
     eachMessage: tracedEachMessage(async ({ topic, partition, message }) => {
       if (!message.value) return;
 
-      if (topic === 'orders-topic') {
-        const event = JSON.parse(message.value.toString());
-        if (event.eventType === 'ORDER_PENDING_END') {
-          console.log(`👤 [Customers Worker] Received PENDING order ${event.orderId}. Validating customer...`);
-          await customerModel.handleOrderPending(event);
+      await withDLQ(producer, topic, partition, message.offset, message, async () => {
+        if (topic === 'orders-topic') {
+          const event = JSON.parse(message.value!.toString());
+          if (event.eventType === 'ORDER_PENDING_END') {
+            console.log(`👤 [Customers Worker] Received PENDING order ${event.orderId}. Validating customer...`);
+            await customerModel.handleOrderPending(event);
+          }
+          return;
         }
-        return;
-      }
-      
-      const commandStr = message.value.toString();
-      const command: CustomerCommand = JSON.parse(commandStr);
+        
+        const commandStr = message.value!.toString();
+        const command: CustomerCommand = JSON.parse(commandStr);
 
-      console.log(`[Worker] Received Command: ${command.commandType}`);
+        console.log(`[Worker] Received Command: ${command.commandType}`);
 
-      try {
         if (command.commandType === 'CREATE_CUSTOMER_COMMAND') {
           await customerModel.createCustomer(command.payload);
         } else if (command.commandType === 'UPGRADE_TIER_COMMAND') {
           await customerModel.upgradeTier(command.payload.customerId, command.payload.newTier);
         }
-      } catch (err) {
-        console.error(`[Worker] Error processing command ${command.commandType}`, err);
-      }
+      }, dlqRetryMap);
     }),
   });
 

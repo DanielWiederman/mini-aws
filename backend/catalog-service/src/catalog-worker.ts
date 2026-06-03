@@ -1,21 +1,21 @@
 import { Kafka, Partitioners } from 'kafkajs';
 import { db } from './db.js';
 import { CatalogModel } from './catalog-model.js';
-import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, tracedEachMessage, KafkaLogger } from 'shared-contracts';
+import { CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, tracedEachMessage, KafkaLogger, withDLQ } from 'shared-contracts';
 import { sql } from 'kysely';
 import { initScheduler, priceUpdateQueue } from './scheduler.js';
 import Redis from 'ioredis';
 
 const kafka = new Kafka({
   clientId: 'catalog-service-worker',
-  brokers: ['localhost:9092']
+  brokers: [(process.env.KAFKA_BROKER || 'localhost:9092')]
 });
 
 const consumer = kafka.consumer({ groupId: 'catalog-service-group' });
-const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
+const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner, allowAutoTopicCreation: true });
 const sysLogger = new KafkaLogger(producer, 'catalog-service');
 const catalogModel = new CatalogModel(producer, sysLogger);
-const redis = new Redis('redis://localhost:6379');
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 async function initDB() {
   await db.schema
@@ -87,33 +87,34 @@ async function start() {
   await consumer.subscribe({ topic: 'orders-topic', fromBeginning: false });
   console.log('📦 [Catalog Worker] Listening for commands and saga orders');
 
+  const dlqRetryMap = new Map<string, number>();
+
   await consumer.run({
-    eachMessage: tracedEachMessage(async ({ topic, message }) => {
+    eachMessage: tracedEachMessage(async ({ topic, partition, message }) => {
       if (!message.value) return;
       
-      if (topic === 'orders-topic') {
-        const event = JSON.parse(message.value.toString());
-        
-        // Idempotency check
-        const eventId = `${event.eventType}:${event.orderId}`;
-        const alreadySeen = await redis.set(`idem:catalog:${eventId}`, '1', 'EX', 86400, 'NX');
-        if (!alreadySeen) {
-          console.log(`📦 [Idempotency] Skipping duplicate event: ${eventId}`);
+      await withDLQ(producer, topic, partition, message.offset, message, async () => {
+        if (topic === 'orders-topic') {
+          const event = JSON.parse(message.value!.toString());
+          
+          // Idempotency check
+          const eventId = `${event.eventType}:${event.orderId}`;
+          const alreadySeen = await redis.set(`idem:catalog:${eventId}`, '1', 'EX', 86400, 'NX');
+          if (!alreadySeen) {
+            console.log(`📦 [Idempotency] Skipping duplicate event: ${eventId}`);
+            return;
+          }
+
+          if (event.eventType === 'ORDER_PENDING_END') {
+            console.log(`📦 [Catalog Worker] Received PENDING order ${event.orderId}. Attempting stock reservation...`);
+            await catalogModel.handleOrderPending(event);
+          }
           return;
         }
 
-        if (event.eventType === 'ORDER_PENDING_END') {
-          console.log(`📦 [Catalog Worker] Received PENDING order ${event.orderId}. Attempting stock reservation...`);
-          await catalogModel.handleOrderPending(event);
-        }
-        return;
-      }
+        const command: CatalogCommand = JSON.parse(message.value!.toString());
+        console.log(`📦 [Catalog Worker] Received command: ${command.commandType}`);
 
-      const command: CatalogCommand = JSON.parse(message.value.toString());
-      
-      console.log(`📦 [Catalog Worker] Received command: ${command.commandType}`);
-
-      try {
         switch (command.commandType) {
           case 'CREATE_PRODUCT_START': {
             const payload = command.payload as CreateProductCommandPayload;
@@ -159,9 +160,7 @@ async function start() {
           default:
             console.warn(`📦 Unknown command type: ${command.commandType}`);
         }
-      } catch (e) {
-        console.error(`📦 Failed to process command ${command.commandType}`, e);
-      }
+      }, dlqRetryMap);
     })
   });
 

@@ -12,7 +12,7 @@ const io = new Server(server, {
   cors: { origin: '*', credentials: true }
 });
 
-const redisSubscriber = new Redis('redis://localhost:6379');
+const redisSubscriber = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 redisSubscriber.subscribe('orders_pubsub', 'catalog_pubsub', (err) => {
   if (err) console.error('Failed to subscribe to Redis channels', err);
@@ -32,6 +32,7 @@ redisSubscriber.on('message', (channel, message) => {
   }
 });
 
-server.listen(4000, () => {
-  console.log('🔌 Websockets Service running on http://localhost:4000');
+const port = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : 4000;
+server.listen(port, () => {
+  console.log(`🔌 Websockets Service running on http://localhost:${port}`);
 });

@@ -29,14 +29,22 @@ export interface Database {
 }
 
 const pool = new Pool({
-  host: 'localhost',
-  port: 5434,
+  host: process.env.CATALOG_DB_HOST || 'localhost',
+  port: parseInt(process.env.CATALOG_DB_PORT || '5434'),
   user: 'postgres',
   password: 'postgres',
   database: 'catalog_db',
-  max: 50,
+  max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000
+});
+
+// Startup health check
+pool.query('SELECT 1').then(() => {
+  console.log(`🛒 [Catalog] Connecting to Postgres at ${process.env.CATALOG_DB_HOST || 'localhost'}:${process.env.CATALOG_DB_PORT || '5434'}`);
+}).catch(() => {
+  console.error('❌ FATAL: Cannot connect to Postgres. Refusing to start.');
+  process.exit(1);
 });
 
 export const db = new Kysely<Database>({

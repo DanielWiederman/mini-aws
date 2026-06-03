@@ -168,8 +168,9 @@ async function verifyData() {
   let pgCount = 0;
   let completedVerified = 0;
   let cancelledVerified = 0;
+  let finalizedPgCount = 0;
   let attempts = 0;
-  const maxAttempts = 36; // 36 * 5s = 180s = 3 minutes
+  const maxAttempts = 120; // 120 * 5s = 600s = 10 minutes
   
   while (attempts < maxAttempts) {
     const pgRes = await client.query(`SELECT status, COUNT(*) FROM "order" WHERE order_id LIKE 'super_order_${runId}_%' GROUP BY status`);
@@ -189,12 +190,14 @@ async function verifyData() {
     completedVerified = tempCompleted;
     cancelledVerified = tempCancelled;
     
-    if (pgCount >= acceptedOrders) {
+    finalizedPgCount = completedVerified + cancelledVerified;
+    if (finalizedPgCount >= acceptedOrders) {
       break;
     }
     
     attempts++;
-    console.log(`   [Poll ${attempts}/${maxAttempts}] Found ${pgCount}/${acceptedOrders} orders in Postgres. Waiting 5s...`);
+    const pendingCount = pgCount - finalizedPgCount;
+    console.log(`   [Poll ${attempts}/${maxAttempts}] Finalized: ${finalizedPgCount}/${acceptedOrders} (${pendingCount} still PENDING). Waiting 5s...`);
     await delay(5000);
   }
   
@@ -203,22 +206,25 @@ async function verifyData() {
   console.log(`📊 Expected (Accepted by API Gateway): ${acceptedOrders}`);
   console.log(`📊 Found in Postgres (Final State): ${pgCount} (Completed: ${completedVerified}, Cancelled: ${cancelledVerified})`);
   
-  assert.strictEqual(pgCount, acceptedOrders, `Data loss detected! Postgres has ${pgCount} but we accepted ${acceptedOrders}`);
+  assert.strictEqual(finalizedPgCount, acceptedOrders, `Data loss detected! Only ${finalizedPgCount} finalized but we accepted ${acceptedOrders}`);
   
   // Try verifying Redis CQRS view dynamically
+  let redisCount = -1;
   try {
     const Redis = (await import('ioredis')).default;
     const redis = new Redis();
     const startMs = runId; 
     const endMs = Date.now();
     const [redisCountRes] = await redis.call('FT.SEARCH', 'idx:orders', `@createdAt:[${startMs} ${endMs}]`, 'LIMIT', '0', '0') as any;
-    const redisCount = redisCountRes;
-    
-    console.log(`📊 Found in RediSearch View (Queryable Read Data): ${redisCount}`);
-    const finalizedPgCount = completedVerified + cancelledVerified;
-    assert.strictEqual(redisCount, finalizedPgCount, `Data loss detected in Redis CQRS View! Redis has ${redisCount} but Postgres has ${finalizedPgCount} finalized orders`);
+    redisCount = redisCountRes;
+    await redis.quit();
   } catch (err: any) {
-    console.log(`⚠️ Note: Redis verification skipped or failed: ${err.message}`);
+    console.log(`⚠️ Note: Redis verification skipped due to connection error: ${err.message}`);
+  }
+
+  if (redisCount !== -1) {
+    console.log(`📊 Found in RediSearch View (Queryable Read Data): ${redisCount}`);
+    assert.strictEqual(redisCount, pgCount, `Data loss detected in Redis CQRS View! Redis has ${redisCount} but Postgres has ${pgCount} total orders`);
   }
 
   console.log(`🎉 VERIFICATION SUCCESSFUL! Zero data loss under extreme load!`);

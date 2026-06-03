@@ -22,16 +22,25 @@ graph TD
     Kafka -->|Consumes Commands| Catalog[Catalog Service]
     Kafka -->|Consumes Commands| Customers[Customers Service]
 
-    %% Microservices to Kafka
-    Orders -->|Produces Events| Kafka
-    Catalog -->|Produces Events| Kafka
-    Customers -->|Produces Events| Kafka
+    %% Databases
+    Orders -->|Local State| DB1[(PostgreSQL: Orders)]
+    Catalog -->|Local State| DB2[(PostgreSQL: Catalog)]
+    Customers -->|Local State| DB3[(PostgreSQL: Customers)]
+
+    %% Microservices to Kafka (Outbox & DLQ)
+    Orders -->|Produces Events & DLQ| Kafka
+    Catalog -->|Produces Events & DLQ| Kafka
+    Customers -->|Produces Events & DLQ| Kafka
+    
+    %% Observability
+    Kafka -->|Consumes Logs| LogsService[Logs Service]
+    LogsService -->|Persists| DB4[(PostgreSQL: Logs)]
     
     %% CQRS Engine
     Kafka -->|Consumes Events| CQRS[CQRS Derived View Engine]
     
     %% Storage
-    CQRS -->|Writes Materialized Views| Redis[(Redis Key-Value Store)]
+    CQRS -->|Writes Views & Join State| Redis[(Redis Key-Value Store)]
     CQRS -->|Publishes Updates| RedisPubSub((Redis Pub/Sub Channel))
     
     %% Read Paths
@@ -50,8 +59,9 @@ graph TD
 * **High-Performance Full-Text Search:** Powered by RediSearch and Redis JSON. The API Gateway utilizes inverted indexes and prefix matching (`FT.SEARCH`) to provide blazing-fast, sortable catalog search capabilities directly from the read models.
 * **API Rate Limiting:** An atomic Token Bucket rate limiting algorithm is executed directly in the stateless API Gateway via a custom Redis Lua Script. This protects public endpoints from burst traffic while gracefully handling capacity and token refill rates. Authenticated admin roles dynamically bypass these restrictions.
 * **Distributed Tracing:** Fully instrumented with OpenTelemetry and Jaeger. Every API request and asynchronous Kafka message is traced across the entire microservice ecosystem, providing deep observability into saga executions and latency.
+* **Dead Letter Queue (DLQ):** Kafka consumers are hardened against poison-pill payloads. If a message encounters processing errors consecutively, it is automatically routed to a specialized DLQ topic (`<topic>-dlq`) to prevent the worker from crashing or stalling, allowing manual inspection and replay later.
 * **Centralized System Logging:** A dedicated `logs-service` acts as a centralized sink for all diagnostic logging. Microservices use a `KafkaLogger` to emit fire-and-forget logs into a shared Kafka topic (`system-logs-topic`), which are then aggregated into a central PostgreSQL database. A background worker ensures the database is automatically pruned using a rolling FIFO retention policy (5,000 logs max) to prevent storage bloat.
-* **High-Performance Local State:** Microservices utilize LMDB for ultra-fast, zero-copy local state processing before emitting final events.
+* **High-Performance Distributed State:** Microservices utilize Redis hash sets for ultra-fast, distributed local state processing and data joins before emitting final events.
 * **Stateless API Gateway:** The API Gateway holds zero state and maintains no persistent socket connections, allowing it to be elastically scaled behind an Application Load Balancer (e.g., AWS ECS/Fargate).
 
 ### Transactional Outbox vs Centralized Logging
@@ -65,7 +75,7 @@ While both patterns utilize Kafka, they serve fundamentally different purposes a
 * **Backend:** Node.js, Express, TypeScript
 * **Observability & Tracing:** OpenTelemetry, Jaeger
 * **Messaging & Pub/Sub:** Apache Kafka, Redis Pub/Sub
-* **Databases:** Redis (Materialized Views), PostgreSQL (Customer Data), LMDB (Ultra-fast Local State)
+* **Databases:** Redis (Materialized Views, Fast Distributed State), PostgreSQL (Persistent Transactional Data)
 * **Real-Time:** Socket.io
 
 ## 📦 How to Run Locally
@@ -81,13 +91,19 @@ While both patterns utilize Kafka, they serve fundamentally different purposes a
    pnpm install
    ```
 
-3. **Start the Microservices Cluster**:
-   Using PM2 or a concurrent runner, boot the entire stack:
+3. **Configure Environment Variables**:
+   Copy the example environment file and ensure the defaults match your setup.
    ```bash
-   pnpm dev
+   cp backend/.env.example backend/.env
    ```
 
-4. **Access the Applications**:
+4. **Start the Microservices Cluster**:
+   Using PM2 or a concurrent runner, boot the entire stack:
+   ```bash
+   pnpm dev:all
+   ```
+
+5. **Access the Applications**:
    * Storefront: `http://localhost:3001`
    * Management Dashboard: `http://localhost:5178`
    * API Gateway: `http://localhost:3000`

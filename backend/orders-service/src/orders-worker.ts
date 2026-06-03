@@ -2,19 +2,22 @@ import { Kafka, Partitioners } from 'kafkajs';
 import { sql } from 'kysely';
 import { db } from './db.js';
 import { OrdersModel } from './orders-model.js';
-import { OrderCommand, CreateOrderCommandPayload, OrderEvent, tracedEachMessage, KafkaLogger } from 'shared-contracts';
+import { OrderCommand, CreateOrderCommandPayload, OrderEvent, tracedEachMessage, KafkaLogger, withDLQ } from 'shared-contracts';
 
 const kafka = new Kafka({
   clientId: 'orders-service-worker',
-  brokers: ['localhost:9092'],
-  allowAutoTopicCreation: false
+  brokers: [(process.env.KAFKA_BROKER || 'localhost:9092')]
 });
 
 const consumer = kafka.consumer({ 
   groupId: 'orders-service-group',
-  maxInFlightRequests: 30
+  maxInFlightRequests: 30,
+  allowAutoTopicCreation: false
 });
-const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
+const producer = kafka.producer({
+  createPartitioner: Partitioners.DefaultPartitioner,
+  allowAutoTopicCreation: true
+});
 const sysLogger = new KafkaLogger(producer, 'orders-service');
 const ordersModel = new OrdersModel(producer, sysLogger);
 
@@ -66,18 +69,20 @@ async function start() {
   await consumer.subscribe({ topic: 'orders-topic', fromBeginning: false });
   console.log('🛒 [Orders Worker] Listening for commands and saga responses');
 
+  const dlqRetryMap = new Map<string, number>();
+
   await consumer.run({
     eachMessage: tracedEachMessage(async ({ topic, partition, message }) => {
       if (!message.value) return;
       
-      try {
+      await withDLQ(producer, topic, partition, message.offset, message, async () => {
         if (topic === 'orders-commands-topic') {
-          const command: OrderCommand = JSON.parse(message.value.toString());
+          const command: OrderCommand = JSON.parse(message.value!.toString());
           if (command.commandType === 'CREATE_ORDER_START') {
             await ordersModel.createPendingOrder(command.payload as CreateOrderCommandPayload);
           }
         } else if (topic === 'orders-topic') {
-          const event: OrderEvent = JSON.parse(message.value.toString());
+          const event: OrderEvent = JSON.parse(message.value!.toString());
           if (!event.eventType) return;
           
           if (['STOCK_RESERVED_END', 'STOCK_DENIED_END', 'CUSTOMER_VALIDATED_END', 'CUSTOMER_INVALID_END'].includes(event.eventType)) {
@@ -85,9 +90,7 @@ async function start() {
             await ordersModel.handleSagaResponse(event.orderId, event.eventType as any);
           }
         }
-      } catch (e) {
-        console.error(`🛒 Failed to process message from ${topic}`, e);
-      }
+      }, dlqRetryMap);
     }),
   });
 

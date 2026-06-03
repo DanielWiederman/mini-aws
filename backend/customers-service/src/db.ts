@@ -32,8 +32,12 @@ export interface Database {
 }
 
 export const pool = new Pool({
-  connectionString: 'postgres://postgres:postgres@localhost:5433/customers_db',
-  max: 50,
+  host: process.env.CUSTOMERS_DB_HOST || 'localhost',
+  port: parseInt(process.env.CUSTOMERS_DB_PORT || '5433'),
+  user: 'postgres',
+  password: 'postgres',
+  database: 'customers_db',
+  max: 15,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000
 });
@@ -42,6 +46,14 @@ const dialect = new PostgresDialect({ pool });
 export const db = new Kysely<Database>({ dialect });
 
 export async function initDb() {
+  try {
+    await pool.query('SELECT 1');
+    console.log(`🛒 [Customers] Connecting to Postgres at ${process.env.CUSTOMERS_DB_HOST || 'localhost'}:${process.env.CUSTOMERS_DB_PORT || '5433'}`);
+  } catch (err) {
+    console.error('❌ FATAL: Cannot connect to Postgres. Refusing to start.');
+    process.exit(1);
+  }
+
   const client = await pool.connect();
   try {
     await client.query(`

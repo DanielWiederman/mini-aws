@@ -1,13 +1,12 @@
 import { Kafka, Consumer } from 'kafkajs';
 import { CustomerEvent, CatalogEvent, OrderEvent, KafkaLogger } from 'shared-contracts';
-import { open } from 'lmdb';
 import Redis from 'ioredis';
 
-const redis = new Redis('redis://localhost:6379');
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 const kafka = new Kafka({
   clientId: 'derived-view-service',
-  brokers: ['localhost:9092']
+  brokers: [(process.env.KAFKA_BROKER || 'localhost:9092')]
 });
 
 // A single consumer group that subscribes to multiple topics
@@ -15,12 +14,11 @@ const consumer: Consumer = kafka.consumer({ groupId: 'cqrs-view-group-2' });
 const producer = kafka.producer();
 const sysLogger = new KafkaLogger(producer, 'derived-view-service');
 
-// --- LOCAL STATE STORES (Backed by LMDB for persistence and high performance) ---
-const customerTable = open({ path: './db/customers', compression: true });
-const catalogTable = open({ path: './db/catalog', compression: true });
+// --- LOCAL STATE STORES (Backed by Redis for persistence and high availability) ---
+// customerTable and catalogTable removed from LMDB
 
-let customersCount = [...customerTable.getKeys()].length;
-let catalogCount = [...catalogTable.getKeys()].length;
+let customersCount = 0;
+let catalogCount = 0;
 
 // --- THE DERIVED READ MODEL (CQRS Materialized View) ---
 interface ReadModelOrderSummary {
@@ -103,8 +101,9 @@ async function startCqrsEngine() {
         // Only process completed domain events
         if (!customer.eventType?.endsWith('_END')) return;
 
-        const isNew = customerTable.get(customer.customerId) === undefined;
-        await customerTable.put(customer.customerId, customer);
+        const existingCustomer = await redis.hget('lmdb:customers', customer.customerId);
+        const isNew = existingCustomer === null;
+        await redis.hset('lmdb:customers', customer.customerId, JSON.stringify(customer));
         sysLogger.info(`Customer state materialized: ${customer.customerId} (Event: ${customer.eventType})`).catch(() => {});
         
         // Expose public profile (without password hash)
@@ -135,7 +134,7 @@ async function startCqrsEngine() {
         const catalog = rawData as CatalogEvent;
         if (!catalog.eventType?.endsWith('_END')) return;
 
-        await catalogTable.put(catalog.productId, catalog);
+        await redis.hset('lmdb:catalog', catalog.productId, JSON.stringify(catalog));
         sysLogger.info(`Catalog item materialized: ${catalog.title} (${catalog.productId})`).catch(() => {});
         
         // Phase 2: Sync Materialized View to Redis
@@ -164,27 +163,31 @@ async function startCqrsEngine() {
           return;
         }
         
-        // 1. Fetch details from LMDB synchronously (Blazing fast reads)
-        const customerProfile = rawOrder.customerId ? (customerTable.get(rawOrder.customerId) as CustomerEvent | undefined) : undefined;
+        // 1. Fetch details from Redis asynchronously
+        const customerProfileStr = rawOrder.customerId ? await redis.hget('lmdb:customers', rawOrder.customerId) : null;
+        const customerProfile = customerProfileStr ? JSON.parse(customerProfileStr) as CustomerEvent : undefined;
         const customerName = customerProfile ? `${customerProfile.firstName} ${customerProfile.lastName}` : 'Unknown Customer';
         const customerTier = customerProfile ? customerProfile.tier : 'STANDARD';
 
         let invoiceTotal = 0;
-        const purchasedItems = (rawOrder.items || []).map(item => {
-          const productDetail = catalogTable.get(item.productId) as CatalogEvent | undefined;
+        const purchasedItems = [];
+        
+        for (const item of (rawOrder.items || [])) {
+          const productDetailStr = await redis.hget('lmdb:catalog', item.productId);
+          const productDetail = productDetailStr ? JSON.parse(productDetailStr) as CatalogEvent : undefined;
           const productTitle = productDetail ? productDetail.title : 'Missing Product Name';
           const currentPrice = productDetail ? Number(productDetail.price) : 0;
           const itemCost = currentPrice * item.quantity;
           
           invoiceTotal += itemCost;
 
-          return {
+          purchasedItems.push({
             productId: item.productId,
             title: productTitle,
             qty: item.quantity,
             totalCost: parseFloat(itemCost.toFixed(2))
-          };
-        });
+          });
+        }
 
         // 2. Apply business rules dynamically based on our joined state
         if (customerTier === 'PREMIUM') {

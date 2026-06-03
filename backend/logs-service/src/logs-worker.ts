@@ -1,15 +1,16 @@
-import { Kafka } from 'kafkajs';
+import { Kafka, Partitioners } from 'kafkajs';
 import { db } from './db.js';
-import { LogEvent } from 'shared-contracts';
+import { LogEvent, withDLQ } from 'shared-contracts';
 import { sql } from 'kysely';
 import crypto from 'crypto';
 
 const kafka = new Kafka({
   clientId: 'logs-service',
-  brokers: ['localhost:9092']
+  brokers: [(process.env.KAFKA_BROKER || 'localhost:9092')]
 });
 
 const consumer = kafka.consumer({ groupId: 'logs-service-group' });
+const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner, allowAutoTopicCreation: true });
 
 async function initDb() {
   await db.schema
@@ -33,14 +34,17 @@ async function initDb() {
 
 async function run() {
   let logsCount = await initDb();
+  await producer.connect();
   await consumer.connect();
   await consumer.subscribe({ topic: 'system-logs-topic', fromBeginning: false });
   
   console.log('📝 [Logs Worker] Listening for logs on system-logs-topic...');
 
+  const dlqRetryMap = new Map<string, number>();
+
   await consumer.run({
-    eachMessage: async ({ message }) => {
-      try {
+    eachMessage: async ({ topic, partition, message }) => {
+      await withDLQ(producer, topic, partition, message.offset, message, async () => {
         if (!message.value) return;
         
         const logEvent: LogEvent = JSON.parse(message.value.toString());
@@ -68,16 +72,14 @@ async function run() {
           await sql`DELETE FROM system_logs WHERE id IN (SELECT id FROM system_logs ORDER BY timestamp ASC LIMIT ${delta})`.execute(db);
           logsCount -= delta;
         }
-
-      } catch (e) {
-        console.error('Failed to sink log to DB', e);
-      }
+      }, dlqRetryMap);
     },
   });
 
   const shutdown = async () => {
     console.log('📝 [Logs Worker] Shutting down gracefully...');
     await consumer.disconnect();
+    await producer.disconnect();
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

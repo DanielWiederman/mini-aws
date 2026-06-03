@@ -1,5 +1,12 @@
-import express from 'express';
+import dotenv from 'dotenv';
 import path from 'path';
+
+// Attempt to load the shared backend .env file.
+try {
+  dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
+} catch (e) {}
+
+import express from 'express';
 import { Kafka, Partitioners } from 'kafkajs';
 import { CustomerCommand, CreateCustomerCommandPayload, UpgradeTierCommandPayload, CatalogCommand, CreateProductCommandPayload, UpdatePriceCommandPayload, OrderCommand, CreateOrderCommandPayload, sendTraced, KafkaLogger } from 'shared-contracts';
 import { open } from 'lmdb';
@@ -20,7 +27,7 @@ app.use(cors({
 const idempotencyDb = open({ path: './db/idempotency', compression: true });
 
 // CQRS Query Side: Connect to the highly-available Redis store
-const redis = new Redis('redis://localhost:6379');
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 // --- TOKEN BUCKET RATE LIMITER ---
 const tokenBucketScript = `
@@ -64,7 +71,7 @@ async function checkRateLimit(key: string, capacity: number, refillRatePerSec: n
 
 const kafka = new Kafka({
   clientId: 'api-gateway',
-  brokers: ['localhost:9092']
+  brokers: [(process.env.KAFKA_BROKER || 'localhost:9092')]
 });
 
 const producer = kafka.producer({ createPartitioner: Partitioners.DefaultPartitioner });
@@ -148,7 +155,7 @@ app.post('/api/customers/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign({ customerId: authData.customerId, role: authData.role || 'CUSTOMER' }, process.env.JWT_SECRET || 'secret_key', { expiresIn: '1h' });
+    const token = jwt.sign({ customerId: authData.customerId, role: authData.role || 'CUSTOMER' }, process.env.JWT_SECRET as string, { expiresIn: '1h' });
     res.cookie('jwt', token, { httpOnly: true, maxAge: 3600000 });
     res.json({ token, customerId: authData.customerId, role: authData.role || 'CUSTOMER' });
 
@@ -206,7 +213,7 @@ const requireAdmin = (req: express.Request, res: express.Response, next: express
   const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as any;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
     if (decoded.role !== 'ADMIN' && decoded.role !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -221,7 +228,7 @@ const requireSuperAdmin = (req: express.Request, res: express.Response, next: ex
   const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as any;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
     if (decoded.role !== 'SUPER_ADMIN') {
       return res.status(403).json({ error: 'Forbidden: SUPER_ADMIN required' });
     }
@@ -426,7 +433,7 @@ app.get('/api/customers/me', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized: No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as { customerId: string };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as { customerId: string };
     const customerStr = await redis.hget('customers_view', decoded.customerId);
     
     if (!customerStr) {
@@ -461,7 +468,7 @@ app.get('/api/catalog', async (req, res) => {
     const token = req.cookies.jwt || req.headers.authorization?.split(' ')[1];
     if (token) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret_key') as any;
+        const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as any;
         if (decoded.role === 'ADMIN' || decoded.role === 'SUPER_ADMIN') {
           isAdmin = true;
         }
@@ -688,11 +695,17 @@ app.get('/api/orders', requireAdmin, async (req, res) => {
 });
 
 async function start() {
+  if (!process.env.JWT_SECRET) {
+    console.error('❌ FATAL: JWT_SECRET environment variable is not set. Refusing to start.');
+    process.exit(1);
+  }
+
   await producer.connect();
   console.log('[API Gateway] Connected to Kafka');
   
-  app.listen(3000, () => {
-    console.log('🌐 API Gateway running on http://localhost:3000');
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  app.listen(port, () => {
+    console.log(`🌐 API Gateway running on http://localhost:${port}`);
   });
 }
 
