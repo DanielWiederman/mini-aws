@@ -72,10 +72,12 @@ async function startCqrsEngine() {
       'PREFIX', '1', 'order:',
       'SCHEMA',
       '$.orderId', 'AS', 'orderId', 'TEXT',
+      '$.customerId', 'AS', 'customerId', 'TAG',
       '$.customerName', 'AS', 'customerName', 'TEXT',
       '$.status', 'AS', 'status', 'TAG',
       '$.createdAt', 'AS', 'createdAt', 'NUMERIC', 'SORTABLE',
-      '$.purchasedItems[*].title', 'AS', 'itemTitle', 'TEXT'
+      '$.purchasedItems[*].title', 'AS', 'itemTitle', 'TEXT',
+      '$.purchasedItems[*].productId', 'AS', 'productId', 'TAG'
     );
   };
   try {
@@ -224,9 +226,9 @@ async function startCqrsEngine() {
 async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
   if (type === 'customer') {
     const customer = data as CustomerEvent;
-    let offset = 0;
     while (true) {
-      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', '@customerName:"Unknown Customer"', 'LIMIT', String(offset), '100') as any[];
+      // Use exact match on customerId to only find orders for this customer
+      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', `@customerId:{${customer.customerId}} @customerName:"Unknown Customer"`, 'LIMIT', '0', '100') as any[];
       const count = searchRes[0] as number;
       if (count === 0) break;
 
@@ -244,6 +246,7 @@ async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
         if (!orderStr) continue;
         
         const order = JSON.parse(orderStr);
+        // Safety check
         if (order.customerId && order.customerId !== customer.customerId) continue;
 
         order.customerName = `${customer.firstName} ${customer.lastName}`;
@@ -264,15 +267,12 @@ async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
         await redis.publish('orders_pubsub', payloadStr);
         console.log(`📊 [Self-Heal] Patched stale customer for order ${order.orderId}`);
       }
-      
-      offset += 100;
-      if (offset >= count) break;
     }
   } else if (type === 'catalog') {
     const catalog = data as CatalogEvent;
-    let offset = 0;
     while (true) {
-      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', '@itemTitle:"Missing Product Name"', 'LIMIT', String(offset), '100') as any[];
+      // Use exact match on productId to only find orders containing this product
+      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', `@productId:{${catalog.productId}} @itemTitle:"Missing Product Name"`, 'LIMIT', '0', '100') as any[];
       const count = searchRes[0] as number;
       if (count === 0) break;
 
@@ -323,9 +323,6 @@ async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
         await redis.publish('orders_pubsub', payloadStr);
         console.log(`📊 [Self-Heal] Patched stale catalog item for order ${order.orderId}`);
       }
-      
-      offset += 100;
-      if (offset >= count) break;
     }
   }
 }
