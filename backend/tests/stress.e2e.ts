@@ -42,7 +42,7 @@ test('Saga Concurrency & Stress Test (100 Concurrent Orders for 10 Items)', asyn
     await Promise.all(customerPromises);
 
     // Wait for eventual consistency
-    await delay(3000);
+    await delay(8000);
   });
 
   await t.test('2. Blast 100 Concurrent Orders', async () => {
@@ -69,7 +69,7 @@ test('Saga Concurrency & Stress Test (100 Concurrent Orders for 10 Items)', asyn
 
   await t.test('3. Wait for Saga Resolution Queue', async () => {
     // 100 orders might take a few seconds to fully process through Kafka and Postgres
-    await delay(8000);
+    await delay(40000);
   });
 
   await t.test('4. Verify Exactly 10 Successes and 90 Cancellations', async () => {

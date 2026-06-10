@@ -20,6 +20,12 @@ const sysLogger = new KafkaLogger(producer, 'derived-view-service');
 let customersCount = 0;
 let catalogCount = 0;
 
+function escapeTagQuery(value: string): string {
+  return value.replace(/[-@.(){}[\]|!~*?\\:^$=&]/g, '\\$&');
+}
+
+const activePatchKeys = new Set<string>();
+
 // --- THE DERIVED READ MODEL (CQRS Materialized View) ---
 interface ReadModelOrderSummary {
   orderId: string;
@@ -72,12 +78,12 @@ async function startCqrsEngine() {
       'PREFIX', '1', 'order:',
       'SCHEMA',
       '$.orderId', 'AS', 'orderId', 'TEXT',
-      '$.customerId', 'AS', 'customerId', 'TAG',
+      '$.customerId', 'AS', 'customerId', 'TAG', 'SEPARATOR', ',',
       '$.customerName', 'AS', 'customerName', 'TEXT',
-      '$.status', 'AS', 'status', 'TAG',
+      '$.status', 'AS', 'status', 'TAG', 'SEPARATOR', ',',
       '$.createdAt', 'AS', 'createdAt', 'NUMERIC', 'SORTABLE',
       '$.purchasedItems[*].title', 'AS', 'itemTitle', 'TEXT',
-      '$.purchasedItems[*].productId', 'AS', 'productId', 'TAG'
+      '$.purchasedItems[*].productId', 'AS', 'productId', 'TAG', 'SEPARATOR', ','
     );
   };
   try {
@@ -106,6 +112,7 @@ async function startCqrsEngine() {
         const existingCustomer = await redis.hget('lmdb:customers', customer.customerId);
         const isNew = existingCustomer === null;
         await redis.hset('lmdb:customers', customer.customerId, JSON.stringify(customer));
+        if (isNew) customersCount++;
         sysLogger.info(`Customer state materialized: ${customer.customerId} (Event: ${customer.eventType})`).catch(() => {});
         
         // Expose public profile (without password hash)
@@ -129,7 +136,12 @@ async function startCqrsEngine() {
         }
         
         updateDashboard(isNew ? `New Customer: ${customer.firstName}` : `Tier Upgraded: ${customer.firstName} -> ${customer.tier}`);
-        await patchStaleOrders('customer', customer);
+        // Only self-heal for recent events — skip during Kafka replay to avoid concurrent FT.SEARCH bursts
+        if (Date.now() - Number(message.timestamp) < 30000) {
+          patchStaleOrders('customer', customer).catch(err =>
+            console.error('📊 [Self-Heal] customer patch failed:', err)
+          );
+        }
       }
 
       // ROUTE 2: Maintain the Catalog local state table (Live price tracking)
@@ -138,6 +150,7 @@ async function startCqrsEngine() {
         if (!catalog.eventType?.endsWith('_END')) return;
 
         await redis.hset('lmdb:catalog', catalog.productId, JSON.stringify(catalog));
+        catalogCount++;
         sysLogger.info(`Catalog item materialized: ${catalog.title} (${catalog.productId})`).catch(() => {});
         
         // Phase 2: Sync Materialized View to Redis
@@ -149,7 +162,12 @@ async function startCqrsEngine() {
           await redis.call('JSON.SET', `catalog:${catalog.productId}`, '$', JSON.stringify(catalog));
           await redis.publish('catalog_pubsub', JSON.stringify(catalog));
           updateDashboard(`Catalog updated: ${catalog.title} ($${catalog.price})`);
-          await patchStaleOrders('catalog', catalog);
+          // Only self-heal for recent events — skip during Kafka replay
+          if (Date.now() - Number(message.timestamp) < 30000) {
+            patchStaleOrders('catalog', catalog).catch(err =>
+              console.error('📊 [Self-Heal] catalog patch failed:', err)
+            );
+          }
         }
       }
 
@@ -226,12 +244,17 @@ async function startCqrsEngine() {
 async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
   if (type === 'customer') {
     const customer = data as CustomerEvent;
-    while (true) {
-      // Use exact match on customerId to only find orders for this customer
-      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', `@customerId:{${customer.customerId}} @customerName:"Unknown Customer"`, 'LIMIT', '0', '100') as any[];
+    const lockKey = `customer:${customer.customerId}`;
+    if (activePatchKeys.has(lockKey)) return;
+    activePatchKeys.add(lockKey);
+    try {
+      while (true) {
+        // Use exact match on customerId to only find orders for this customer
+        const searchRes = await redis.call('FT.SEARCH', 'idx:orders', `@customerId:{${escapeTagQuery(customer.customerId)}} @customerName:"Unknown Customer"`, 'LIMIT', '0', '100') as any[];
       const count = searchRes[0] as number;
       if (count === 0) break;
 
+      let patchedCount = 0;
       for (let i = 1; i < searchRes.length; i += 2) {
         const fields = searchRes[i+1] as string[];
         let orderStr = null;
@@ -243,7 +266,10 @@ async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
           orderStr = fields[0];
         }
         
-        if (!orderStr) continue;
+        if (!orderStr) {
+          console.error(`Failed to parse order from fields:`, fields);
+          continue;
+        }
         
         const order = JSON.parse(orderStr);
         // Safety check
@@ -266,16 +292,30 @@ async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
         await redis.call('JSON.SET', `order:${order.orderId}`, '$', payloadStr);
         await redis.publish('orders_pubsub', payloadStr);
         console.log(`📊 [Self-Heal] Patched stale customer for order ${order.orderId}`);
+        patchedCount++;
       }
+      
+      if (patchedCount === 0) {
+        console.error('📊 [Self-Heal] Failed to patch any orders in this batch. Breaking to avoid infinite loop.');
+        break;
+      }
+    }
+    } finally {
+      activePatchKeys.delete(lockKey);
     }
   } else if (type === 'catalog') {
     const catalog = data as CatalogEvent;
-    while (true) {
-      // Use exact match on productId to only find orders containing this product
-      const searchRes = await redis.call('FT.SEARCH', 'idx:orders', `@productId:{${catalog.productId}} @itemTitle:"Missing Product Name"`, 'LIMIT', '0', '100') as any[];
+    const lockKey = `catalog:${catalog.productId}`;
+    if (activePatchKeys.has(lockKey)) return;
+    activePatchKeys.add(lockKey);
+    try {
+      while (true) {
+        // Use exact match on productId to only find orders containing this product
+        const searchRes = await redis.call('FT.SEARCH', 'idx:orders', `@productId:{${escapeTagQuery(catalog.productId)}} @itemTitle:"Missing Product Name"`, 'LIMIT', '0', '100') as any[];
       const count = searchRes[0] as number;
       if (count === 0) break;
 
+      let patchedCount = 0;
       for (let i = 1; i < searchRes.length; i += 2) {
         const fields = searchRes[i+1] as string[];
         let orderStr = null;
@@ -321,8 +361,17 @@ async function patchStaleOrders(type: 'customer' | 'catalog', data: any) {
         await redis.hset('orders_view', order.orderId, payloadStr);
         await redis.call('JSON.SET', `order:${order.orderId}`, '$', payloadStr);
         await redis.publish('orders_pubsub', payloadStr);
-        console.log(`📊 [Self-Heal] Patched stale catalog item for order ${order.orderId}`);
+        console.log(`📊 [Self-Heal] Patched stale catalog for order ${order.orderId}`);
+        patchedCount++;
       }
+
+      if (patchedCount === 0) {
+        console.error('📊 [Self-Heal] Failed to patch any orders in this batch. Breaking to avoid infinite loop.');
+        break;
+      }
+    }
+    } finally {
+      activePatchKeys.delete(lockKey);
     }
   }
 }

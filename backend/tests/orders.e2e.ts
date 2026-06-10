@@ -9,6 +9,22 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
   const timestamp = Date.now();
   const testCustomerId = `test_cust_order_${timestamp}`;
   const testProductId = `test_prod_order_${timestamp}`;
+
+  // Helper function to poll for order state
+  async function pollOrder(orderId: string, expectedStatus?: string, maxWaitMs = 30000) {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+      const res = await fetch(`${API_URL}/orders/${orderId}`);
+      if (res.status === 200) {
+        if (!expectedStatus) return res;
+        const body = await res.clone().json();
+        if (body.status === expectedStatus) return res;
+      }
+      await delay(2000);
+    }
+    return await fetch(`${API_URL}/orders/${orderId}`); // Final attempt
+  }
+
   const testOrderId = `test_order_${timestamp}`;
 
   await t.test('1. Setup Data: Create Customer & Product', async () => {
@@ -53,11 +69,11 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
 
   await t.test('3. Wait for Saga Completion', async () => {
     // Saga involves Orders -> Kafka -> Catalog/Customers -> Kafka -> Orders -> Kafka -> CQRS -> Redis
-    await delay(7000); 
+    // We will poll for it in the next test instead of a fixed delay
   });
 
   await t.test('4. Verify Saga Completed Successfully', async () => {
-    const res = await fetch(`${API_URL}/orders/${testOrderId}`);
+    const res = await pollOrder(testOrderId, 'COMPLETED');
     assert.strictEqual(res.status, 200);
     
     const order = await res.json();
@@ -68,7 +84,7 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
 
   await t.test('5. Try to over-order the Nike Shoe (Expect Cancellation)', async () => {
     const overOrderId = `test_order_fail_${timestamp}`;
-    await fetch(`${API_URL}/orders`, {
+    const postRes = await fetch(`${API_URL}/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `req-o2-${timestamp}` },
       body: JSON.stringify({
@@ -78,9 +94,11 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
       })
     });
     
-    await delay(4000);
-
-    const res = await fetch(`${API_URL}/orders/${overOrderId}`);
+    if (postRes.status !== 202) {
+      console.error(`[Test 5] POST /orders failed with status ${postRes.status}:`, await postRes.text());
+    }
+    
+    const res = await pollOrder(overOrderId, 'CANCELLED');
     assert.strictEqual(res.status, 200);
     
     const order = await res.json();
@@ -101,7 +119,7 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
     await delay(3000);
 
     // Create an order with a completely invalid customer ID
-    await fetch(`${API_URL}/orders`, {
+    const postRes = await fetch(`${API_URL}/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': `req-o3-${timestamp}` },
       body: JSON.stringify({
@@ -110,12 +128,14 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
         items: [{ productId: testProductId3, quantity: 2 }]
       })
     });
+    
+    if (postRes.status !== 202) {
+      console.error(`[Test 6] POST /orders failed with status ${postRes.status}:`, await postRes.text());
+    }
 
     // Wait for the saga to fail, the order to be cancelled, and the compensating transaction to restore stock
-    await delay(5000);
-
     // 1. Verify the order is cancelled
-    const orderRes = await fetch(`${API_URL}/orders/${invalidCustOrderId}`);
+    const orderRes = await pollOrder(invalidCustOrderId, 'CANCELLED');
     assert.strictEqual(orderRes.status, 200);
     const order = await orderRes.json();
     assert.strictEqual(order.status, 'CANCELLED', 'Order should be cancelled due to invalid customer');
@@ -177,9 +197,7 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
     });
     assert.strictEqual(res2.status, 202);
 
-    await delay(4000);
-
-    const orderRes = await fetch(`${API_URL}/orders/${idemOrderId}`);
+    const orderRes = await pollOrder(idemOrderId, 'COMPLETED');
     assert.strictEqual(orderRes.status, 200);
     const order = await orderRes.json();
     assert.strictEqual(order.status, 'COMPLETED');
@@ -213,9 +231,7 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
       })
     });
 
-    await delay(6000);
-
-    const orderRes = await fetch(`${API_URL}/orders/${raceOrderId}`);
+    const orderRes = await pollOrder(raceOrderId, 'CANCELLED');
     assert.strictEqual(orderRes.status, 200);
     const order = await orderRes.json();
     assert.strictEqual(order.status, 'CANCELLED');
@@ -252,11 +268,19 @@ test('Orders Service Distributed Saga E2E Lifecycle', async (t: TestContext) => 
 
     const insertedId = res.rows[0].id;
 
-    await delay(7000);
-
-    const verifyRes = await client.query('SELECT processed_at FROM outbox WHERE id = $1', [insertedId]);
-    assert.ok(verifyRes.rows.length > 0);
-    assert.notStrictEqual(verifyRes.rows[0].processed_at, null);
+    let processed = false;
+    let verifyRes;
+    const start = Date.now();
+    while (Date.now() - start < 30000) {
+      verifyRes = await client.query('SELECT processed_at FROM outbox WHERE id = $1', [insertedId]);
+      if (verifyRes.rows.length > 0 && verifyRes.rows[0].processed_at !== null) {
+        processed = true;
+        break;
+      }
+      await delay(2000);
+    }
+    
+    assert.ok(processed, 'Outbox row should be processed');
 
     await client.end();
   });
